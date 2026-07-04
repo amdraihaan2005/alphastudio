@@ -181,12 +181,12 @@ Goal: 5 senior analysts can use it for a week and report ≥3 hours saved per an
 
 ## Phase 9 — Deployment (Railway)
 
-- [ ] Railway: backend service (Uvicorn, env vars, `ALLOWED_ORIGINS`)
-- [ ] Railway: frontend service (Vite build, `VITE_*` env vars at build time)
-- [ ] Supabase: re-enable email confirmation for production if disabled during dev
-- [ ] Run `alembic upgrade head` against production Supabase (direct connection)
-- [ ] Run ingestion against production database
-- [ ] End-to-end test on deployed URLs with a real Driftwood-style email account
+- [x] Railway: backend service (Uvicorn, env vars, `ALLOWED_ORIGINS`)
+- [x] Railway: frontend service (Vite build, `VITE_*` env vars at build time)
+- [x] Supabase: re-enable email confirmation for production if disabled during dev
+- [x] Run `alembic upgrade head` against production Supabase (direct connection)
+- [x] Run ingestion against production database
+- [/] End-to-end test on deployed URLs with a real Driftwood-style email account
 
 ---
 
