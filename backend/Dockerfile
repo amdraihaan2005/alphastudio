@@ -14,8 +14,7 @@ ENV UV_COMPILE_BYTECODE=1
 COPY pyproject.toml uv.lock /app/
 
 # Install dependencies into project's virtual environment
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev
+RUN uv sync --frozen --no-install-project --no-dev
 
 # Final runtime image
 FROM python:3.12-slim-bookworm AS runtime
