@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
-import { Lock, Mail, AlertCircle, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Lock, Mail, AlertCircle, Eye, EyeOff, Loader2, Sparkles } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -63,6 +63,31 @@ export default function Login() {
         
         <form onSubmit={handleLogin}>
           <CardContent className="space-y-4">
+            {/* Guest Credentials Banner */}
+            <div className="rounded-xl bg-blue-500/5 border border-blue-500/10 p-3.5 text-xs text-slate-300 leading-normal">
+              <div className="flex items-center gap-1.5 font-bold text-blue-400 mb-1 font-mono uppercase tracking-wider text-[10px]">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Demo Guest Access</span>
+              </div>
+              <p className="mb-2 text-slate-400">
+                Checking out the project? Use these credentials to sign in instantly:
+              </p>
+              <div className="space-y-1 bg-[#040814]/40 border border-slate-800/40 p-2.5 rounded-lg font-mono text-[11px]">
+                <div>Email: <span className="text-slate-200">analyst@alphastudio.com</span></div>
+                <div>Password: <span className="text-slate-200">analyst@alphastudio123</span></div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail('analyst@alphastudio.com');
+                    setPassword('analyst@alphastudio123');
+                  }}
+                  className="mt-2 w-full text-center text-[10px] text-blue-400 hover:text-blue-350 hover:underline cursor-pointer font-sans font-semibold transition-colors"
+                >
+                  Click here to auto-fill credentials
+                </button>
+              </div>
+            </div>
+
             {error && (
               <div className="flex items-center gap-2 rounded-xl bg-red-500/5 border border-red-500/15 p-3 text-xs font-semibold text-red-400">
                 <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />
