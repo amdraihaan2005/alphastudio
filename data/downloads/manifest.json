@@ -1,0 +1,16 @@
+[
+  {
+    "ticker": "RELIANCE",
+    "company": "Reliance Industries Limited",
+    "year": 2025,
+    "type": "Annual Report",
+    "filename": "RELIANCE_2025.pdf"
+  },
+  {
+    "ticker": "TCS",
+    "company": "Tata Consultancy Services Limited",
+    "year": 2025,
+    "type": "Annual Report",
+    "filename": "TCS_2025.pdf"
+  }
+]
