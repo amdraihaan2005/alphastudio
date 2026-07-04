@@ -56,6 +56,3 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
-# AI Assistant Configs (ignored for clean public repository)
-.agents/

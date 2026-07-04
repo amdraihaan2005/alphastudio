@@ -15,12 +15,10 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 interface PendingDoc {
   filename: string;
   startTime: number;
-  timedOut?: boolean;   // true when polling exceeded the window without finding the doc
+  timedOut?: boolean;
 }
 
 interface PublicDoc {
@@ -30,14 +28,8 @@ interface PublicDoc {
   year: number;
 }
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-/** Max time (ms) to wait for background ingestion before showing an error. */
-const INGESTION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-/** Polling interval for checking whether a just-uploaded doc has been ingested. */
+const INGESTION_TIMEOUT_MS = 10 * 60 * 1000;
 const POLLING_INTERVAL_MS = 4_000;
-
-// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const { threadId } = useParams<{ threadId: string }>();
@@ -74,8 +66,6 @@ export default function Dashboard() {
   const [homeUploadName, setHomeUploadName] = useState<string | null>(null);
   const [homeUploadError, setHomeUploadError] = useState<string | null>(null);
 
-  // ─── Polling: detect when background ingestion finishes ──────────────────
-
   useEffect(() => {
     const activePending = pendingDocs.filter(p => !p.timedOut);
 
@@ -87,7 +77,7 @@ export default function Dashboard() {
       return;
     }
 
-    if (pollingRef.current) return; // already running
+    if (pollingRef.current) return; 
 
     pollingRef.current = setInterval(async () => {
       try {
@@ -96,15 +86,14 @@ export default function Dashboard() {
 
         setPendingDocs(prev =>
           prev.map(pd => {
-            if (pd.timedOut) return pd; // already in error state
+            if (pd.timedOut) return pd; 
             const found = docs.some(d => d.filename === pd.filename);
-            if (found) return null as unknown as PendingDoc; // mark for removal
+            if (found) return null as unknown as PendingDoc;
             const timedOut = Date.now() - pd.startTime > INGESTION_TIMEOUT_MS;
             return timedOut ? { ...pd, timedOut: true } : pd;
           }).filter(Boolean) as PendingDoc[]
         );
       } catch {
-        // silent — will retry on next tick
       }
     }, POLLING_INTERVAL_MS);
 
@@ -115,8 +104,6 @@ export default function Dashboard() {
       }
     };
   }, [pendingDocs.filter(p => !p.timedOut).length]);
-
-  // ─── Home screen upload ───────────────────────────────────────────────────
 
   const handleHomeFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -159,13 +146,9 @@ export default function Dashboard() {
     }
   };
 
-  // ─── Chat window upload callback ──────────────────────────────────────────
-
   const handleChatUploadStart = useCallback((filename: string) => {
     setPendingDocs(prev => [...prev, { filename, startTime: Date.now() }]);
   }, []);
-
-  // ─── Thread list + user info ──────────────────────────────────────────────
 
   const loadDashboardData = useCallback(async () => {
     try {
@@ -189,8 +172,6 @@ export default function Dashboard() {
 
   useEffect(() => { loadDashboardData(); }, [loadDashboardData]);
 
-  // ─── Load private + public docs once on mount ─────────────────────────────
-
   useEffect(() => {
     async function loadDocs() {
       setDocsLoading(true);
@@ -202,7 +183,6 @@ export default function Dashboard() {
         setUserDocs(myDocs);
         setPublicDocs(pubDocs);
       } catch {
-        // Silently fail — sidebar degrades gracefully
       } finally {
         setDocsLoading(false);
       }
@@ -210,7 +190,6 @@ export default function Dashboard() {
     loadDocs();
   }, []);
 
-  // ─── Thread actions ───────────────────────────────────────────────────────
 
   const handleCreateThread = async () => {
     try {
@@ -239,17 +218,13 @@ export default function Dashboard() {
     }
   };
 
-  // ─── Document delete (with "Deleting..." status) ─────────────────────────
-
   const handleDeleteDoc = async (docId: string, filename: string) => {
     if (!confirm(`Delete "${filename}" from your library?\n\nThis cannot be undone.`)) return;
 
-    // Show "Deleting..." state immediately
     setDeletingDocIds(prev => new Set(prev).add(docId));
 
     try {
       await deleteDocument(docId);
-      // Remove from list once confirmed deleted
       setUserDocs(prev => prev.filter(d => d.id !== docId));
     } catch (err) {
       console.error('Failed to delete document:', err);
@@ -262,7 +237,6 @@ export default function Dashboard() {
     }
   };
 
-  // ─── Home-screen new-thread submission ────────────────────────────────────
 
   const handleSuggestionClick = async (prompt: string) => {
     if (!prompt.trim()) return;
@@ -284,7 +258,6 @@ export default function Dashboard() {
 
   const activeThread = threads.find(t => t.id === threadId);
 
-  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#030712] text-slate-100 font-sans relative">
