@@ -2,7 +2,6 @@ import os
 import json
 import re
 
-# Mapping of common NSE Ticker symbols to Full Company Names
 TICKER_MAP = {
     "RELIANCE": "Reliance Industries Limited",
     "TCS": "Tata Consultancy Services Limited",
@@ -20,7 +19,6 @@ def main():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     downloads_dir = os.path.join(base_dir, "data", "downloads")
     
-    # Create the folder if it doesn't exist yet
     os.makedirs(downloads_dir, exist_ok=True)
     
     print(f"Scanning directory: {downloads_dir} for PDF files...")
@@ -37,7 +35,6 @@ def main():
     manifest = []
     
     for filename in files:
-        # Expected pattern: TICKER_YEAR.pdf (e.g. RELIANCE_2024.pdf)
         match = re.match(r"^([A-Z0-9]+)_([0-9]{4})\.pdf$", filename, re.IGNORECASE)
         
         if match:
@@ -56,7 +53,6 @@ def main():
         else:
             print(f"[Warning] Filename '{filename}' does not match pattern TICKER_YEAR.pdf. Skipping.")
 
-    # Write manifest.json
     manifest_path = os.path.join(downloads_dir, "manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)

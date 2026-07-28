@@ -1,9 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    UploadFile,
+    File,
+    BackgroundTasks,
+)
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import List
-import asyncio
 
 from app.database.connection import get_db
 from app.database.models.chat_thread import ChatThread
@@ -12,45 +19,56 @@ from app.database.models.document_chunk import DocumentChunk
 from app.database.models.source_document import SourceDocument
 from app.database.models.user import User
 from app.auth.dependencies import get_current_user
-from app.schemas.chat import ThreadCreate, ThreadResponse, MessageResponse, ChatStreamRequest
+from app.schemas.chat import (
+    ThreadCreate,
+    ThreadResponse,
+    MessageResponse,
+    ChatStreamRequest,
+)
 from app.chat.orchestrator import orchestrate_chat_stream
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
+
 @router.get("/threads", response_model=List[ThreadResponse])
 def list_threads(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     """
     List all chat threads belonging to the current authenticated user.
     """
-    threads = db.query(ChatThread).filter(ChatThread.user_id == current_user.id).order_by(ChatThread.created_at.desc()).all()
+    threads = (
+        db.query(ChatThread)
+        .filter(ChatThread.user_id == current_user.id)
+        .order_by(ChatThread.created_at.desc())
+        .all()
+    )
     return threads
 
-@router.post("/threads", response_model=ThreadResponse, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/threads", response_model=ThreadResponse, status_code=status.HTTP_201_CREATED
+)
 def create_thread(
     thread_data: ThreadCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Create a new chat thread for the current authenticated user.
     """
-    new_thread = ChatThread(
-        user_id=current_user.id,
-        title=thread_data.title
-    )
+    new_thread = ChatThread(user_id=current_user.id, title=thread_data.title)
     db.add(new_thread)
     db.commit()
     db.refresh(new_thread)
     return new_thread
 
+
 @router.get("/threads/{thread_id}/messages", response_model=List[MessageResponse])
 def get_thread_messages(
     thread_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Load message history for a specific chat thread.
@@ -59,23 +77,23 @@ def get_thread_messages(
     thread = db.query(ChatThread).filter(ChatThread.id == thread_id).first()
     if not thread:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat thread not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Chat thread not found"
         )
-    
+
     if thread.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this chat thread"
+            detail="You do not have permission to access this chat thread",
         )
-        
+
     return thread.messages
+
 
 @router.delete("/threads/{thread_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_thread(
     thread_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Delete a chat thread and all its associated messages.
@@ -84,16 +102,15 @@ def delete_thread(
     thread = db.query(ChatThread).filter(ChatThread.id == thread_id).first()
     if not thread:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat thread not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Chat thread not found"
         )
-        
+
     if thread.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to delete this chat thread"
+            detail="You do not have permission to delete this chat thread",
         )
-        
+
     db.delete(thread)
     db.commit()
     return
@@ -103,63 +120,55 @@ def delete_thread(
 async def chat_stream(
     request: ChatStreamRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Accepts the chat message history, performs hybrid retrieval, invokes PydanticAI
     agent, runs grounding check, and streams response in Vercel AI SDK compatible format.
     """
-    # 1. Validate ownership of thread
     thread = db.query(ChatThread).filter(ChatThread.id == request.thread_id).first()
     if not thread:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat thread not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Chat thread not found"
         )
-        
+
     if thread.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to access this chat thread"
+            detail="You do not have permission to access this chat thread",
         )
-        
+
     if not request.messages:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Message history cannot be empty"
+            detail="Message history cannot be empty",
         )
-        
-    # Get the last message (the new user message)
+
     new_user_msg = request.messages[-1]
     if new_user_msg.role != "user":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Last message in history must be from user"
+            detail="Last message in history must be from user",
         )
-        
-    # 2. Persist the user's message immediately
+
     user_msg_db = ChatMessage(
-        chat_thread_id=request.thread_id,
-        role="user",
-        content=new_user_msg.content
+        chat_thread_id=request.thread_id, role="user", content=new_user_msg.content
     )
     db.add(user_msg_db)
     db.commit()
-    
-    # 3. Stream from orchestrator
+
     return StreamingResponse(
         orchestrate_chat_stream(request.thread_id, new_user_msg.content),
         media_type="text/event-stream",
-        headers={
-            "X-Accel-Buffering": "no"
-        }
+        headers={"X-Accel-Buffering": "no"},
     )
+
 
 @router.get("/chunks/{chunk_id}")
 def get_chunk_details(
     chunk_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Retrieve document chunk details along with context from surrounding chunks.
@@ -167,20 +176,26 @@ def get_chunk_details(
     chunk = db.query(DocumentChunk).filter(DocumentChunk.id == chunk_id).first()
     if not chunk:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document chunk not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document chunk not found"
         )
 
-    # Retrieve preceding and succeeding chunks
-    preceding_chunk = db.query(DocumentChunk).filter(
-        DocumentChunk.source_document_id == chunk.source_document_id,
-        DocumentChunk.chunk_index == chunk.chunk_index - 1
-    ).first()
+    preceding_chunk = (
+        db.query(DocumentChunk)
+        .filter(
+            DocumentChunk.source_document_id == chunk.source_document_id,
+            DocumentChunk.chunk_index == chunk.chunk_index - 1,
+        )
+        .first()
+    )
 
-    succeeding_chunk = db.query(DocumentChunk).filter(
-        DocumentChunk.source_document_id == chunk.source_document_id,
-        DocumentChunk.chunk_index == chunk.chunk_index + 1
-    ).first()
+    succeeding_chunk = (
+        db.query(DocumentChunk)
+        .filter(
+            DocumentChunk.source_document_id == chunk.source_document_id,
+            DocumentChunk.chunk_index == chunk.chunk_index + 1,
+        )
+        .first()
+    )
 
     return {
         "id": str(chunk.id),
@@ -199,10 +214,6 @@ def get_chunk_details(
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 10: Private PDF Upload
-# ─────────────────────────────────────────────────────────────────────────────
-
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_document(
     background_tasks: BackgroundTasks,
@@ -217,7 +228,6 @@ async def upload_document(
     The heavy ingestion work is offloaded to a background task so the HTTP
     response returns immediately with 202 Accepted.
     """
-    # Validate MIME type
     if file.content_type not in ("application/pdf", "application/octet-stream"):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -231,7 +241,6 @@ async def upload_document(
             detail="File must have a .pdf extension.",
         )
 
-    # Read bytes eagerly (before request scope closes)
     file_bytes = await file.read()
     if len(file_bytes) == 0:
         raise HTTPException(
@@ -241,7 +250,6 @@ async def upload_document(
 
     user_id = current_user.id
 
-    # Idempotency guard: reject if the user already has a doc with the same filename
     existing = (
         db.query(SourceDocument)
         .filter(
@@ -269,7 +277,9 @@ async def upload_document(
         try:
             ingest_uploaded_document(session, user_id, filename, file_bytes)
         except Exception as exc:
-            logger.error(f"Background ingestion failed for '{filename}': {exc}", exc_info=True)
+            logger.error(
+                f"Background ingestion failed for '{filename}': {exc}", exc_info=True
+            )
         finally:
             session.close()
 

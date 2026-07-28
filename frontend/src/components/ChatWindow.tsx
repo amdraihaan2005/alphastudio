@@ -21,7 +21,6 @@ import {
 import { cn } from '@/lib/utils';
 import SourcePassagePanel from './SourcePassagePanel';
 
-
 interface ChatWindowProps {
   threadId: string;
   threadTitle: string;
@@ -43,7 +42,6 @@ export default function ChatWindow({ threadId, threadTitle, onUploadStart }: Cha
         setLoading(true);
         setError(null);
 
-        // Get session token
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           throw new Error('No active Supabase session found.');
@@ -53,7 +51,6 @@ export default function ChatWindow({ threadId, threadTitle, onUploadStart }: Cha
           setToken(session.access_token);
         }
 
-        // Fetch thread messages
         const history = await getThreadMessages(threadId);
         
         if (isMounted) {
@@ -150,7 +147,6 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
   const initialPromptRun = useRef(false);
   const [input, setInput] = useState('');
 
-  // Upload state
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [uploadFileName, setUploadFileName] = useState<string | null>(null);
@@ -187,20 +183,19 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
       }
 
       setUploadState('success');
-      // Notify parent (Dashboard) to start tracking this doc
+      
       onUploadStart?.(file.name);
-      // Auto-clear success banner after 4s
+      
       setTimeout(() => { setUploadState('idle'); setUploadFileName(null); }, 4000);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed.');
       setUploadState('error');
     } finally {
-      // Reset file input so the same file can be re-uploaded
+      
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  // Citations & context state
   const [messageCitations, setMessageCitations] = useState<Record<string, CitationResponse[]>>(initialCitations);
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<string | null>(null);
@@ -244,8 +239,8 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
       if (dataPart.type === 'data-retrieved_context') {
         setPipelineStatus('Synthesizing grounded response...');
       } else if (dataPart.type === 'data-citations') {
-        const citations = (dataPart.data as any)?.citations;
-        // Associate citations with the last assistant message using messagesRef
+        const citations = (dataPart.data as Record<string, unknown>)?.citations as CitationResponse[] | undefined;
+        
         const lastAssistantMsg = [...messagesRef.current].reverse().find(m => m.role === 'assistant');
         if (lastAssistantMsg && citations) {
           setMessageCitations(prev => ({
@@ -253,28 +248,17 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
             [lastAssistantMsg.id]: citations
           }));
         }
-        setPipelineStatus(null);
       }
-    },
-    onError: (err: Error) => {
-      console.error('Streaming error:', err);
-      let cleanMsg = err.message || 'Network error encountered during stream.';
-      if (cleanMsg.includes('Grounding Error:')) {
-        cleanMsg = cleanMsg.replace(/^Error:\s*/i, '');
-      }
-      setStreamError(cleanMsg);
-      setPipelineStatus(null);
     }
   });
 
-  // Keep messagesRef updated to prevent stale closures in onData
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
 
-  // Sync statuses with useChat state transitions
   useEffect(() => {
     if (status === 'submitted') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPipelineStatus('Retrieving context...');
       setStreamError(null);
     } else if (status === 'streaming') {
@@ -282,11 +266,10 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
     }
   }, [status]);
 
-  // Automatically execute the initial prompt suggestion if present in routing state
   useEffect(() => {
     if (location.state?.initialPrompt && !initialPromptRun.current && messages.length === 0) {
       initialPromptRun.current = true;
-      // Clear location state to avoid double execution on reload
+      
       window.history.replaceState({}, document.title);
       sendMessage({
         text: location.state.initialPrompt,
@@ -296,7 +279,6 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
     }
   }, [location.state, messages, sendMessage]);
 
-  // Scroll to bottom when messages or loading state changes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, status]);
@@ -310,17 +292,15 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
     setPipelineStatus('Retrieving context...');
   };
 
-
   const isModelGenerating = status === 'submitted' || status === 'streaming';
 
   return (
     <div className="flex h-full w-full bg-[#030712] text-slate-100 overflow-hidden">
-      {/* Main Chat Viewport */}
+      
       <div className="flex-1 flex flex-col h-full bg-[#030712] text-slate-100 relative overflow-hidden border-r border-slate-900/40">
-        {/* Background radial highlight */}
+        
         <div className="absolute top-0 right-1/4 h-[300px] w-[500px] rounded-full bg-blue-600/5 blur-[100px] pointer-events-none"></div>
 
-        {/* Chat Header */}
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-900 bg-[#030712]/50 backdrop-blur-xl px-6">
           <div className="flex items-center gap-3">
             <h1 className="text-base font-semibold text-slate-100">
@@ -329,7 +309,6 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
           </div>
         </header>
 
-        {/* Messages Viewport */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-none">
           {messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center max-w-md mx-auto text-center space-y-4 py-12">
@@ -361,7 +340,7 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
                     isUser ? "ml-auto flex-row-reverse" : "mr-auto"
                   )}
                 >
-                  {/* Avatar */}
+                  
                   <div className={cn(
                     "flex h-9 w-9 shrink-0 select-none items-center justify-center rounded-xl border text-xs font-semibold shadow-sm",
                     isUser 
@@ -371,7 +350,6 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
                     {isUser ? <User className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
                   </div>
 
-                  {/* Message Bubble */}
                   <div className={cn(
                     "flex flex-col gap-1.5 max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-md transition-all duration-200",
                     isUser 
@@ -395,7 +373,6 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
             })
           )}
 
-          {/* Grounding Error Display */}
           {streamError && (
             <div className="flex w-full gap-4 max-w-3xl mr-auto animate-fade-in">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-red-500/25 bg-red-950/10 text-red-400">
@@ -408,7 +385,6 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
             </div>
           )}
 
-          {/* Streaming/Loading Indicator */}
           {isModelGenerating && (
             <div className="flex w-full gap-4 max-w-3xl mr-auto animate-pulse">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-blue-500/20 bg-blue-950/10 text-blue-400">
@@ -430,9 +406,8 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Drawer */}
         <footer className="sticky bottom-0 z-20 border-t border-slate-900/40 bg-[#030712]/80 backdrop-blur-md px-6 py-4">
-          {/* Hidden PDF file input */}
+          
           <input
             ref={fileInputRef}
             type="file"
@@ -442,7 +417,6 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
           />
           <form onSubmit={handleSubmit} className="max-w-2xl mx-auto">
 
-            {/* Upload status banner */}
             {uploadState !== 'idle' && (
               <div className={cn(
                 "flex items-center justify-between gap-3 rounded-xl px-3 py-2 mb-3 text-xs font-semibold border transition-all",
@@ -485,7 +459,6 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
                 }}
               />
               
-              {/* Input action toolbar */}
               <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-900/80">
                 <div className="flex items-center gap-2">
                   <span className="rounded-xl px-3 py-1 text-[10px] font-semibold flex items-center gap-1.5 bg-blue-600 text-slate-50 shadow-md shadow-blue-500/10">
@@ -522,7 +495,6 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
         </footer>
       </div>
 
-      {/* Audit sidebar for chunk inspect */}
       {selectedChunkId && (
         <SourcePassagePanel 
           chunkId={selectedChunkId} 
@@ -533,16 +505,13 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
   );
 }
 
-// ─── Citation-aware Markdown renderer ────────────────────────────────────────
-
 interface AssistantMessageProps {
   text: string;
   citations: CitationResponse[];
   onCitationClick: (chunkId: string) => void;
 }
 
-/** Citation regex — matches [filename.pdf, Page N] supporting optional spaces, bold asterisks, and varied punctuation */
-const CITATION_REGEX = /\[\s*\*?\*?\s*([^,\]\*]+?)\s*\*?\*?\s*,\s*\*?\*?\s*[pP]age\s*\*?\*?\s*(\d+)\s*\*?\*?\s*\]/g;
+const CITATION_REGEX = /\[\s*\*?\*?\s*([^,\]*]+?)\s*\*?\*?\s*,\s*\*?\*?\s*[pP]age\s*\*?\*?\s*(\d+)\s*\*?\*?\s*\]/g;
 
 function buildDisplayLabel(filename: string, pageNum: number): string {
   let company = filename.replace(/_.*$/, '');
@@ -553,18 +522,11 @@ function buildDisplayLabel(filename: string, pageNum: number): string {
   return `${company} ${year}, p. ${pageNum}`;
 }
 
-/**
- * Renders an assistant message with:
- *  - Full GFM markdown (bold, italic, tables, lists, code, etc.)
- *  - Citation markers replaced by interactive citation buttons
- */
 function AssistantMessage({ text, citations, onCitationClick }: AssistantMessageProps) {
-  // Pre-process: replace citation markers with markdown link placeholders
-  // e.g. [TCS_2024.pdf, Page 12] → [TCS '24, p. 12](cit://0)
+  
   const citationStore: Record<string, { chunkId: string | null; label: string }> = {};
   let citIdx = 0;
 
-  // Normalize thick full-width brackets to standard brackets
   const normalizedText = text.replace(/【/g, '[').replace(/】/g, ']');
 
   const processedText = normalizedText.replace(CITATION_REGEX, (_match, filename, pageStr) => {
@@ -585,11 +547,11 @@ function AssistantMessage({ text, citations, onCitationClick }: AssistantMessage
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        // Paragraphs
+        
         p: ({ children }) => (
           <p className="mb-2 last:mb-0 text-sm text-slate-200 leading-relaxed">{children}</p>
         ),
-        // Headings
+        
         h1: ({ children }) => (
           <h1 className="text-base font-bold text-slate-100 mt-4 mb-2 first:mt-0">{children}</h1>
         ),
@@ -599,14 +561,14 @@ function AssistantMessage({ text, citations, onCitationClick }: AssistantMessage
         h3: ({ children }) => (
           <h3 className="text-sm font-semibold text-slate-200 mt-2 mb-1 first:mt-0">{children}</h3>
         ),
-        // Emphasis
+        
         strong: ({ children }) => (
           <strong className="font-semibold text-slate-100">{children}</strong>
         ),
         em: ({ children }) => (
           <em className="italic text-slate-300">{children}</em>
         ),
-        // Lists
+        
         ul: ({ children }) => (
           <ul className="list-disc list-outside ml-4 space-y-0.5 mb-2 text-slate-300">{children}</ul>
         ),
@@ -616,12 +578,11 @@ function AssistantMessage({ text, citations, onCitationClick }: AssistantMessage
         li: ({ children }) => (
           <li className="text-sm leading-relaxed">{children}</li>
         ),
-        // Code
+        
         code: ({ className, children }) => {
           const isBlock = Boolean(className);
           const rawText = typeof children === 'string' ? children : String(children || '');
           
-          // Render citations interactively even inside code blocks / preformatted tables
           const processedChildren = (() => {
             const LINK_REGEX = /\[([^\]]+)\]\(https:\/\/citation.local\/(cit-\d+)\)/g;
             const parts: React.ReactNode[] = [];
@@ -674,7 +635,6 @@ function AssistantMessage({ text, citations, onCitationClick }: AssistantMessage
             return parts.length > 0 ? parts : children;
           })();
 
-          // Check if children contain any citation element (resolved button or unresolved span)
           const hasCitation = Array.isArray(processedChildren)
             ? processedChildren.some(child => typeof child === 'object' && child !== null)
             : typeof processedChildren === 'object' && processedChildren !== null;
@@ -700,13 +660,13 @@ function AssistantMessage({ text, citations, onCitationClick }: AssistantMessage
           );
         },
         pre: ({ children }) => <>{children}</>,
-        // Blockquote
+        
         blockquote: ({ children }) => (
           <blockquote className="border-l-2 border-blue-500/40 pl-3 my-2 text-slate-400 italic">
             {children}
           </blockquote>
         ),
-        // Tables
+        
         table: ({ children }) => (
           <div className="overflow-x-auto mb-2">
             <table className="w-full text-xs border-collapse">{children}</table>
@@ -719,9 +679,9 @@ function AssistantMessage({ text, citations, onCitationClick }: AssistantMessage
         tr: ({ children }) => <tr className="border-b border-slate-800/60">{children}</tr>,
         th: ({ children }) => <th className="px-3 py-1.5 text-left">{children}</th>,
         td: ({ children }) => <td className="px-3 py-1.5">{children}</td>,
-        // Horizontal rule
+        
         hr: () => <hr className="border-slate-800 my-3" />,
-        // Links — intercept citation links
+        
         a: ({ href, children }) => {
           if (href?.startsWith('https://citation.local/')) {
             const key = href.replace('https://citation.local/', '');
@@ -741,7 +701,7 @@ function AssistantMessage({ text, citations, onCitationClick }: AssistantMessage
                 </button>
               );
             }
-            // Unresolved citation
+            
             return (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-400 font-mono text-[10px] mx-0.5 align-middle select-none">
                 {children}

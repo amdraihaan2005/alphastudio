@@ -2,7 +2,7 @@
 Upload ingestion service: handles streaming PDF bytes -> parse -> chunk -> embed -> save.
 Reuses the existing parser/chunker/embedder pipeline from Phase 0–5 ingest.
 """
-import io
+
 import time
 import logging
 from uuid import UUID
@@ -22,7 +22,7 @@ def parse_pdf_bytes(file_bytes: bytes):
     Parse a PDF from raw bytes using PyMuPDF (fitz).
     Yields ParsedPage dicts with page_number and text.
     """
-    import fitz  # PyMuPDF
+    import fitz
     from app.ingest.parser import table_to_markdown, is_overlapping
 
     doc = fitz.open(stream=file_bytes, filetype="pdf")
@@ -30,7 +30,6 @@ def parse_pdf_bytes(file_bytes: bytes):
         for page_idx, page in enumerate(doc):
             page_number = page_idx + 1
 
-            # Identify tables and convert to Markdown
             tables = page.find_tables()
             table_bboxes = []
             table_markdowns = {}
@@ -42,7 +41,6 @@ def parse_pdf_bytes(file_bytes: bytes):
                 except Exception:
                     pass
 
-            # Extract text blocks, skipping text inside tables
             blocks = page.get_text("blocks")
             elements = []
             for bbox, md in table_markdowns.items():
@@ -52,9 +50,13 @@ def parse_pdf_bytes(file_bytes: bytes):
                 text = block[4].strip()
                 if not text:
                     continue
-                in_table = any(is_overlapping(block_bbox, t_bbox, 0.4) for t_bbox in table_bboxes)
+                in_table = any(
+                    is_overlapping(block_bbox, t_bbox, 0.4) for t_bbox in table_bboxes
+                )
                 if not in_table:
-                    elements.append((block_bbox[1], block_bbox[0], "text", text, block_bbox))
+                    elements.append(
+                        (block_bbox[1], block_bbox[0], "text", text, block_bbox)
+                    )
 
             elements.sort(key=lambda x: (x[0], x[1]))
             assembled = "\n\n".join(e[3] for e in elements).strip()
@@ -101,7 +103,6 @@ def ingest_uploaded_document(
 
     logger.info(f"Chunked '{filename}': {len(all_chunks)} chunks. Embedding...")
 
-    # Batch embed (respecting Cohere trial rate limits)
     batch_size = 20
     embeddings: list = []
     for i in range(0, len(all_chunks), batch_size):
@@ -112,7 +113,6 @@ def ingest_uploaded_document(
 
     logger.info(f"Embedding complete for '{filename}'. Saving to DB...")
 
-    # Persist atomically
     db_doc = SourceDocument(
         filename=filename,
         user_id=user_id,
@@ -121,7 +121,7 @@ def ingest_uploaded_document(
         year=0,
     )
     db.add(db_doc)
-    db.flush()  # Populate db_doc.id
+    db.flush()
 
     db_chunks = [
         DocumentChunk(

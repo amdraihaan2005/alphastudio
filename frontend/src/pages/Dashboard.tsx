@@ -35,32 +35,25 @@ export default function Dashboard() {
   const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
 
-  // Thread list
   const [threads, setThreads] = useState<ThreadResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [creatingThread, setCreatingThread] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // User info
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  // Home-screen input
   const [centralInput, setCentralInput] = useState('');
   const [showGuide, setShowGuide] = useState(false);
 
-  // My Documents
   const [userDocs, setUserDocs] = useState<UserDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [deletingDocIds, setDeletingDocIds] = useState<Set<string>>(new Set());
 
-  // Pending (ingesting) docs + polling
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Public (system) filings
   const [publicDocs, setPublicDocs] = useState<PublicDoc[]>([]);
 
-  // Home-screen upload state
   const homeFileInputRef = useRef<HTMLInputElement>(null);
   const [homeUploadState, setHomeUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [homeUploadName, setHomeUploadName] = useState<string | null>(null);
@@ -93,7 +86,8 @@ export default function Dashboard() {
             return timedOut ? { ...pd, timedOut: true } : pd;
           }).filter(Boolean) as PendingDoc[]
         );
-      } catch {
+      } catch (err) {
+        void err;
       }
     }, POLLING_INTERVAL_MS);
 
@@ -103,7 +97,7 @@ export default function Dashboard() {
         pollingRef.current = null;
       }
     };
-  }, [pendingDocs.filter(p => !p.timedOut).length]);
+  }, [pendingDocs]);
 
   const handleHomeFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -170,7 +164,10 @@ export default function Dashboard() {
     }
   }, []);
 
-  useEffect(() => { loadDashboardData(); }, [loadDashboardData]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadDashboardData();
+  }, [loadDashboardData]);
 
   useEffect(() => {
     async function loadDocs() {
@@ -182,14 +179,14 @@ export default function Dashboard() {
         ]);
         setUserDocs(myDocs);
         setPublicDocs(pubDocs);
-      } catch {
+      } catch (err) {
+        void err;
       } finally {
         setDocsLoading(false);
       }
     }
-    loadDocs();
+    void loadDocs();
   }, []);
-
 
   const handleCreateThread = async () => {
     try {
@@ -237,7 +234,6 @@ export default function Dashboard() {
     }
   };
 
-
   const handleSuggestionClick = async (prompt: string) => {
     if (!prompt.trim()) return;
     try {
@@ -258,14 +254,11 @@ export default function Dashboard() {
 
   const activeThread = threads.find(t => t.id === threadId);
 
-
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#030712] text-slate-100 font-sans relative">
 
-      {/* ═══ SIDEBAR ═══════════════════════════════════════════════════════ */}
       <aside className="w-72 border-r border-slate-900 bg-[#060813] flex flex-col h-full shrink-0 select-none">
 
-        {/* App Branding */}
         <div className="h-16 px-6 border-b border-slate-900 flex items-center">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-sm shadow-md shadow-blue-500/20">
@@ -275,7 +268,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* New Thread Button */}
         <div className="p-4">
           <button
             onClick={handleCreateThread}
@@ -290,10 +282,8 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* Scrollable sidebar body */}
         <div className="flex-1 overflow-y-auto px-3 space-y-5 py-2 scrollbar-none">
 
-          {/* ── Active Sessions ─────────────────────────────────────────── */}
           <div className="space-y-0.5">
             {loading ? (
               <div className="flex items-center justify-center py-6">
@@ -345,7 +335,6 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* ── My Documents ─────────────────────────────────────────────── */}
           <div className="space-y-1.5">
             <div className="px-2 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono flex items-center gap-1.5 border-t border-slate-900 pt-3">
               <Database className="h-3 w-3" />
@@ -360,7 +349,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <>
-                  {/* Actively ingesting docs */}
+                  
                   {pendingDocs.map(pd => (
                     <div
                       key={pd.filename}
@@ -405,7 +394,6 @@ export default function Dashboard() {
                     </div>
                   ))}
 
-                  {/* Uploaded private docs */}
                   {userDocs.length === 0 && pendingDocs.length === 0 ? (
                     <p className="text-[11px] text-slate-600 px-2 py-1 leading-snug">
                       No uploads yet. Use the 📎 in chat.
@@ -463,7 +451,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* ── Pre-loaded Filings (Public / System) ─────────────────────── */}
           {publicDocs.length > 0 && (
             <div className="space-y-1.5">
               <div className="px-2 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono flex items-center gap-1.5 border-t border-slate-900 pt-3">
@@ -493,7 +480,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* User Profile Footer */}
         <div className="p-4 border-t border-slate-900 bg-[#060813] flex flex-col gap-3">
           <div className="flex items-center gap-3 px-1">
             <div className="h-8 w-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-450">
@@ -514,7 +500,6 @@ export default function Dashboard() {
         </div>
       </aside>
 
-      {/* ═══ MAIN CONTENT ═══════════════════════════════════════════════════ */}
       <main className="flex-1 h-full overflow-hidden bg-[#030712] relative flex flex-col">
         {activeThread ? (
           <ChatWindow
@@ -525,7 +510,7 @@ export default function Dashboard() {
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center relative px-6">
-            {/* Horizon glow */}
+            
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[140%] h-[350px] bg-gradient-to-t from-blue-750/10 via-transparent to-transparent rounded-[100%] blur-3xl pointer-events-none translate-y-48" />
 
             <div className="w-full max-w-xl text-center space-y-6 relative z-10">
@@ -536,7 +521,6 @@ export default function Dashboard() {
                 <p className="text-xl font-light text-slate-400">How can I help you today?</p>
               </div>
 
-              {/* Upload banner */}
               {homeUploadState !== 'idle' && (
                 <div className={cn(
                   "flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-xs font-semibold border transition-all text-left",
@@ -560,10 +544,8 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Hidden PDF file input */}
               <input ref={homeFileInputRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={handleHomeFileUpload} />
 
-              {/* Central Input Form */}
               <form
                 onSubmit={e => { e.preventDefault(); handleSuggestionClick(centralInput); }}
                 className="bg-[#070b16]/80 border border-slate-800/80 rounded-2xl p-4 shadow-2xl focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/10 transition-all duration-300 text-left"
@@ -607,7 +589,6 @@ export default function Dashboard() {
         )}
       </main>
 
-      {/* ═══ HELP BUTTON ════════════════════════════════════════════════════ */}
       <div className="absolute bottom-6 right-6 z-30">
         <button
           onClick={() => setShowGuide(true)}
@@ -618,7 +599,6 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* ═══ GUIDE MODAL ════════════════════════════════════════════════════ */}
       {showGuide && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-[#0b0f19] border border-slate-800 rounded-2xl w-full max-w-md p-6 text-slate-200 shadow-2xl relative space-y-4">

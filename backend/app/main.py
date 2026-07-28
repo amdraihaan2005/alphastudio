@@ -8,11 +8,10 @@ from app.logging_config import configure_logging
 
 configure_logging()
 
-
 app = FastAPI(
     title="Alpha Copilot",
     description="FastAPI service for financial document analysis and private RAG using Groq & Cohere",
-    version="0.1.0"
+    version="0.1.0",
 )
 
 app.add_middleware(
@@ -25,6 +24,7 @@ app.add_middleware(
 
 app.include_router(chat.router)
 
+
 @app.get("/health", tags=["Health"])
 async def health_check():
     """
@@ -34,8 +34,9 @@ async def health_check():
         "status": "healthy",
         "llm_model": settings.GROQ_LLM_MODEL,
         "embedding_model": settings.EMBEDDING_MODEL,
-        "embedding_dimensions": settings.EMBEDDING_DIMENSIONS
+        "embedding_dimensions": settings.EMBEDDING_DIMENSIONS,
     }
+
 
 @app.get("/auth/test-me", tags=["Authentication"])
 async def test_auth(current_user: User = Depends(get_current_user)):
@@ -45,5 +46,5 @@ async def test_auth(current_user: User = Depends(get_current_user)):
     return {
         "status": "authenticated",
         "user_id": str(current_user.id),
-        "email": current_user.email
+        "email": current_user.email,
     }

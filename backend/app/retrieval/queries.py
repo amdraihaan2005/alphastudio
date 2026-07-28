@@ -17,9 +17,8 @@ def semantic_search(
     Scopes results to public docs (user_id IS NULL) plus the caller's private uploads.
     Returns the top matching DocumentChunks ordered by similarity.
     """
-    query = (
-        db.query(DocumentChunk)
-        .join(SourceDocument, DocumentChunk.source_document_id == SourceDocument.id)
+    query = db.query(DocumentChunk).join(
+        SourceDocument, DocumentChunk.source_document_id == SourceDocument.id
     )
     if user_id:
         query = query.filter(
@@ -29,8 +28,7 @@ def semantic_search(
         query = query.filter(SourceDocument.user_id.is_(None))
 
     return (
-        query
-        .order_by(DocumentChunk.embedding.cosine_distance(query_embedding))
+        query.order_by(DocumentChunk.embedding.cosine_distance(query_embedding))
         .limit(limit)
         .all()
     )
@@ -65,8 +63,7 @@ def full_text_search(
         query = query.filter(SourceDocument.user_id.is_(None))
 
     return (
-        query
-        .order_by(func.ts_rank(DocumentChunk.search_vector, tsquery).desc())
+        query.order_by(func.ts_rank(DocumentChunk.search_vector, tsquery).desc())
         .limit(limit)
         .all()
     )

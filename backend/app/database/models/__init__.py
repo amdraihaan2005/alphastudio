@@ -6,7 +6,11 @@ from app.database.models.chat_thread import ChatThread
 from app.database.models.chat_message import ChatMessage
 from app.database.models.message_citation import MessageCitation
 from app.database.models.message_role import MessageRole
-from app.database.models.constants import DEFAULT_CHAT_TITLE, EMBEDDING_DIMENSIONS, TEXT_SEARCH_CONFIG
+from app.database.models.constants import (
+    DEFAULT_CHAT_TITLE,
+    EMBEDDING_DIMENSIONS,
+    TEXT_SEARCH_CONFIG,
+)
 
 __all__ = [
     "Base",
@@ -19,5 +23,5 @@ __all__ = [
     "MessageRole",
     "DEFAULT_CHAT_TITLE",
     "EMBEDDING_DIMENSIONS",
-    "TEXT_SEARCH_CONFIG"
+    "TEXT_SEARCH_CONFIG",
 ]

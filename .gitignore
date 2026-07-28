@@ -26,7 +26,6 @@ __pycache__/
 *.sqlite
 *.sqlite3
 
-
 # Vite/Frontend build output
 frontend/dist/
 frontend/dist-ssr/

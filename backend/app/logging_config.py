@@ -2,6 +2,7 @@ import logging
 import sys
 import structlog
 
+
 def configure_logging():
     """
     Sets up structured logging using structlog.
@@ -9,7 +10,7 @@ def configure_logging():
     In production/headless mode, formats logs into structured JSON lines.
     """
     is_tty = sys.stdout.isatty()
-    
+
     processors = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
@@ -20,22 +21,16 @@ def configure_logging():
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
     ]
-    
+
     if is_tty:
-        # Pretty console rendering for local development
         processors.append(structlog.dev.ConsoleRenderer(colors=True))
     else:
-        # JSON formatting for production execution / Railway dashboard
         processors.append(structlog.processors.JSONRenderer())
 
-    # Direct standard library logging output through structlog's pipeline
     logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=logging.INFO,
-        force=True
+        format="%(message)s", stream=sys.stdout, level=logging.INFO, force=True
     )
-    
+
     structlog.configure(
         processors=processors,
         context_class=dict,

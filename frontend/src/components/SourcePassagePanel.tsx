@@ -34,7 +34,7 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
       try {
         setLoading(true);
         setError(null);
-        // Reset accordion expansions on chunk change
+        
         setShowPreceding(false);
         setShowSucceeding(false);
 
@@ -63,7 +63,7 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
 
   return (
     <div className="w-96 md:w-[420px] border-l border-slate-900 bg-[#060813]/95 backdrop-blur-md flex flex-col h-full shrink-0 select-none animate-slide-in relative z-30">
-      {/* Header */}
+      {}
       <header className="h-16 px-6 border-b border-slate-900 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
@@ -84,7 +84,7 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
         </button>
       </header>
 
-      {/* Content */}
+      {}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-none select-text">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400">
@@ -99,7 +99,7 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
           </div>
         ) : chunk ? (
           <>
-            {/* Metadata Badges */}
+            {}
             <div className="grid grid-cols-2 gap-2 bg-slate-900/35 border border-slate-800/60 p-3.5 rounded-xl">
               <div className="flex items-center gap-2 text-slate-400">
                 <Building2 className="h-3.5 w-3.5 text-slate-500" />
@@ -125,7 +125,7 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
               </div>
             </div>
 
-            {/* Section & Page Info */}
+            {}
             <div className="space-y-1">
               <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest font-mono">Location Context</span>
               <h3 className="text-sm font-bold text-slate-200">
@@ -134,9 +134,9 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
               <p className="text-xs text-slate-500 font-medium">Page {chunk.page_number}</p>
             </div>
 
-            {/* Excerpt Container */}
+            {}
             <div className="space-y-4">
-              {/* Preceding context accordion */}
+              {}
               {chunk.preceding_text && (
                 <div className="border border-slate-800/50 rounded-xl overflow-hidden bg-slate-900/10">
                   <button
@@ -154,7 +154,7 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
                 </div>
               )}
 
-              {/* Main chunk text */}
+              {}
               <div className="relative rounded-xl border border-blue-500/10 bg-gradient-to-b from-blue-950/5 to-indigo-950/5 p-5 shadow-inner">
                 <div className="absolute top-2.5 right-3 px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 font-mono text-[9px] font-bold tracking-wider select-none">
                   CITED TEXT
@@ -164,7 +164,7 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
                 </div>
               </div>
 
-              {/* Succeeding context accordion */}
+              {}
               {chunk.succeeding_text && (
                 <div className="border border-slate-800/50 rounded-xl overflow-hidden bg-slate-900/10">
                   <button
@@ -193,8 +193,6 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
   );
 }
 
-// ─── Local Citation Markdown Component ───────────────────────────────────────
-
 function CitationMarkdown({ text }: { text: string }) {
   return (
     <ReactMarkdown
@@ -218,7 +216,7 @@ function CitationMarkdown({ text }: { text: string }) {
         li: ({ children }) => (
           <li className="leading-relaxed">{children}</li>
         ),
-        // Code
+        
         code: ({ className, children }) => {
           const isBlock = Boolean(className);
           if (isBlock) {
@@ -237,7 +235,7 @@ function CitationMarkdown({ text }: { text: string }) {
           );
         },
         pre: ({ children }) => <>{children}</>,
-        // Tables
+        
         table: ({ children }) => (
           <div className="overflow-x-auto my-2 border border-slate-850 rounded-lg bg-slate-950/20">
             <table className="w-full text-xxs border-collapse text-slate-300 font-sans">{children}</table>

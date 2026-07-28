@@ -52,10 +52,10 @@ export default function Signup() {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-[#030712] px-4 py-12 sm:px-6 lg:px-8 overflow-hidden font-sans">
-      {/* Curved atmosphere planet glow at bottom */}
+      {}
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[140%] h-[350px] bg-gradient-to-t from-blue-700/10 via-transparent to-transparent rounded-[100%] blur-3xl pointer-events-none translate-y-48"></div>
 
-      {/* Ambient background highlight */}
+      {}
       <div className="absolute top-1/4 left-1/4 h-96 w-96 rounded-full bg-blue-600/5 blur-[120px] pointer-events-none"></div>
 
       <Card className="w-full max-w-md border-slate-800 bg-[#070b16]/65 backdrop-blur-xl shadow-2xl text-slate-100 relative z-10 rounded-2xl">
@@ -73,7 +73,7 @@ export default function Signup() {
 
         <form onSubmit={handleSignup}>
           <CardContent className="space-y-4">
-            {/* Notice Dialog Box */}
+            {}
             <div className="rounded-xl bg-amber-500/5 border border-amber-500/10 p-3.5 text-xs text-slate-300 leading-normal">
               <div className="flex items-center gap-1.5 font-bold text-amber-400 mb-1 font-mono uppercase tracking-wider text-[10px]">
                 <AlertCircle className="h-3.5 w-3.5" />
