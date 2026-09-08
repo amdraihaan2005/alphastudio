@@ -26,7 +26,7 @@ SECTION_KEYWORDS = [
 
 def detect_section_header(line: str) -> str | None:
     """
-    Detects if a line looks like a major section header.
+    1. Detects if a line looks like a major section header.
     Returns the cleaned section name if detected, otherwise None.
     """
     cleaned = line.strip()
@@ -53,7 +53,7 @@ def split_text_into_overlapping_chunks(
     text: str, chunk_size: int = 1000, chunk_overlap: int = 200
 ) -> list[str]:
     """
-    Splits text into chunks of target character size and overlap.
+    2. Splits text into chunks of target character size and overlap.
     Attempts to break at clean word boundaries or punctuation.
     """
     if not text:
@@ -109,7 +109,7 @@ def chunk_page(
     chunk_overlap: int = 200,
 ) -> tuple[list[DocumentChunkData], str | None]:
     """
-    Chunks a single page's text, scanning for any new section header.
+    3. Chunks a single page's text, scanning for any new section header.
     Returns the list of chunks generated, and the updated current section name.
     """
     lines = page_text.split("\n")

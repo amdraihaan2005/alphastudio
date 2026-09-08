@@ -61,3 +61,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# idea: try adding beautifulsoup scraping pipelines along with manual install. 
+# update: nse has bot scrapping blockers. try another approach. figure this out later. main focus:
+# main focus: hybrid search + rrf ranking btw

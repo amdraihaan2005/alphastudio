@@ -8,3 +8,7 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
+
+/*
+re-check this file. use figma designed template code re-transform once done. final check later
+*/
