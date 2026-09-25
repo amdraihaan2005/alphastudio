@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
 from app.database.models.document_chunk import DocumentChunk
@@ -127,10 +127,19 @@ def read_chunk(ctx: RunContext[DocumentAgentDeps], chunk_id: str) -> str:
     try:
         uuid_id = UUID(chunk_id)
         chunk = (
-            ctx.deps.db.query(DocumentChunk).filter(DocumentChunk.id == uuid_id).first()
+            ctx.deps.db.query(DocumentChunk)
+            .options(joinedload(DocumentChunk.document))
+            .filter(DocumentChunk.id == uuid_id)
+            .first()
         )
         if not chunk:
             return f"Chunk ID {chunk_id} not found."
+
+        if (
+            chunk.document.user_id is not None
+            and chunk.document.user_id != ctx.deps.user_id
+        ):
+            return f"Access Denied: You do not have permission to view chunk {chunk_id}."
 
         if not any(r["chunk"].id == chunk.id for r in ctx.deps.retrieved_chunks):
             ctx.deps.retrieved_chunks.append(
@@ -157,12 +166,24 @@ def read_surrounding_chunks(ctx: RunContext[DocumentAgentDeps], chunk_id: str) -
     try:
         uuid_id = UUID(chunk_id)
         db = ctx.deps.db
-        chunk = db.query(DocumentChunk).filter(DocumentChunk.id == uuid_id).first()
+        chunk = (
+            db.query(DocumentChunk)
+            .options(joinedload(DocumentChunk.document))
+            .filter(DocumentChunk.id == uuid_id)
+            .first()
+        )
         if not chunk:
             return f"Chunk ID {chunk_id} not found."
 
+        if (
+            chunk.document.user_id is not None
+            and chunk.document.user_id != ctx.deps.user_id
+        ):
+            return f"Access Denied: You do not have permission to view chunk {chunk_id}."
+
         preceding = (
             db.query(DocumentChunk)
+            .options(joinedload(DocumentChunk.document))
             .filter(
                 DocumentChunk.source_document_id == chunk.source_document_id,
                 DocumentChunk.chunk_index == chunk.chunk_index - 1,
@@ -172,6 +193,7 @@ def read_surrounding_chunks(ctx: RunContext[DocumentAgentDeps], chunk_id: str) -
 
         succeeding = (
             db.query(DocumentChunk)
+            .options(joinedload(DocumentChunk.document))
             .filter(
                 DocumentChunk.source_document_id == chunk.source_document_id,
                 DocumentChunk.chunk_index == chunk.chunk_index + 1,

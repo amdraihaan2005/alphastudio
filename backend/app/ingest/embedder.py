@@ -6,15 +6,32 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-def get_embeddings(texts: list[str]) -> list[list[float]]:
+def get_embeddings(
+    texts: list[str], prefixes: list[str] | None = None
+) -> list[list[float]]:
     """
     Generates dense vector embeddings using Cohere's latest ClientV2.
     Includes robust rate-limit detection (429) and exponential backoff retry.
+    Supports optional contextual prefixes to enrich vector representations.
     """
     if not texts:
         return []
 
-    logger.info(f"Generating Cohere embeddings for batch of {len(texts)} chunks.")
+    if prefixes and len(prefixes) != len(texts):
+        raise ValueError("Length of prefixes must match length of texts if provided.")
+
+    embedded_inputs = (
+        [
+            f"{p.strip()}\n\n{t}" if p and p.strip() else t
+            for p, t in zip(prefixes, texts)
+        ]
+        if prefixes
+        else texts
+    )
+
+    logger.info(
+        f"Generating Cohere embeddings for batch of {len(embedded_inputs)} chunks."
+    )
 
     if not settings.COHERE_API_KEY or settings.COHERE_API_KEY.strip() == "":
         raise ValueError("COHERE_API_KEY is not configured in settings/environment.")
@@ -27,7 +44,7 @@ def get_embeddings(texts: list[str]) -> list[list[float]]:
             co = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
 
             response = co.embed(
-                texts=texts,
+                texts=embedded_inputs,
                 model=settings.EMBEDDING_MODEL,
                 input_type="search_document",
             )
@@ -73,22 +90,42 @@ def get_embeddings(texts: list[str]) -> list[list[float]]:
 def get_query_embedding(query_text: str) -> list[float]:
     """
     Generates a dense vector embedding for a search query using Cohere's ClientV2.
-    Uses input_type='search_query' as recommended for queries.
+    Uses input_type='search_query' with automatic retry and exponential backoff.
     """
     if not query_text.strip():
         raise ValueError("Query text cannot be empty.")
 
-    try:
-        co = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
-        response = co.embed(
-            texts=[query_text],
-            model=settings.EMBEDDING_MODEL,
-            input_type="search_query",
-        )
-        embeddings = response.embeddings.float
-        if not embeddings or not embeddings[0]:
-            raise ValueError("Cohere API response did not contain query embedding.")
-        return embeddings[0]
-    except Exception as e:
-        logger.error(f"Failed to generate query embedding: {e}", exc_info=True)
-        raise e
+    if not settings.COHERE_API_KEY or settings.COHERE_API_KEY.strip() == "":
+        raise ValueError("COHERE_API_KEY is not configured in settings/environment.")
+
+    max_retries = 4
+    base_delay = 2.0
+
+    for attempt in range(max_retries):
+        try:
+            co = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
+            response = co.embed(
+                texts=[query_text],
+                model=settings.EMBEDDING_MODEL,
+                input_type="search_query",
+            )
+            embeddings = response.embeddings.float
+            if not embeddings or not embeddings[0]:
+                raise ValueError("Cohere API response did not contain query embedding.")
+            return embeddings[0]
+        except Exception as e:
+            error_str = str(e)
+            is_rate_limit = (
+                "429" in error_str
+                or "rate limit" in error_str.lower()
+                or "too many requests" in error_str.lower()
+            )
+            if is_rate_limit and attempt < max_retries - 1:
+                delay = base_delay * (2**attempt)
+                logger.warning(
+                    f"Cohere rate limit hit on query embedding. Retrying in {delay:.1f}s... (Attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(delay)
+            else:
+                logger.error(f"Failed to generate query embedding: {e}", exc_info=True)
+                raise e

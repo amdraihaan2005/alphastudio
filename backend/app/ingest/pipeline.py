@@ -33,25 +33,23 @@ def ingest_document(db: Session, doc_metadata: dict, pdf_file_path: str) -> None
 
     logger.info(f"Starting ingestion process for {company} ({year}) - {filename}")
 
-    pages_generator = parse_pdf_pages(pdf_file_path)
+    pages = parse_pdf_pages(pdf_file_path)
+    logger.info(f"Extracted {len(pages)} non-empty pages from {filename}")
 
     all_chunks = []
-    current_section = None
+    header_stack: list[tuple[int, str]] = []
     chunk_idx = 0
 
     try:
-        for page in pages_generator:
+        for page in pages:
             page_text = page["text"]
             page_num = page["page_number"]
 
-            if not page_text.strip():
-                continue
-
-            page_chunks, current_section = chunk_page(
+            page_chunks, header_stack = chunk_page(
                 page_text=page_text,
                 page_number=page_num,
                 start_chunk_idx=chunk_idx,
-                current_section=current_section,
+                header_stack=header_stack,
                 chunk_size=1000,
                 chunk_overlap=200,
             )
@@ -78,8 +76,12 @@ def ingest_document(db: Session, doc_metadata: dict, pdf_file_path: str) -> None
 
             chunk_batch = all_chunks[i : i + batch_size]
             batch_texts = [c["text_content"] for c in chunk_batch]
+            batch_prefixes = [
+                f"Document: {company} ({year}) {filing_type} | Section: {c['section_name'] or 'General'}"
+                for c in chunk_batch
+            ]
 
-            batch_embeddings = get_embeddings(batch_texts)
+            batch_embeddings = get_embeddings(batch_texts, prefixes=batch_prefixes)
             embeddings.extend(batch_embeddings)
 
         logger.info(

@@ -1,6 +1,14 @@
-import fitz
+"""
+PDF Parser module for Alpha Studio.
+Uses PyMuPDF and pymupdf4llm for high-performance layout-aware extraction,
+converting PDFs into structured Markdown with preserved headers, reading flow, and tables.
+"""
+
 import logging
-from typing import Generator, TypedDict
+from typing import TypedDict
+
+import fitz
+import pymupdf4llm
 
 logger = logging.getLogger(__name__)
 
@@ -10,138 +18,78 @@ class ParsedPage(TypedDict):
     text: str
 
 
-def table_to_markdown(table_data: list[list[str | None]]) -> str:
+def _extract_markdown_pages(doc: fitz.Document) -> list[ParsedPage]:
     """
-    Converts raw table list of lists from PyMuPDF into a formatted Markdown table.
+    Extracts structured Markdown page-by-page from an open PyMuPDF Document.
+    Filters out empty/whitespace pages and returns a clean list of ParsedPage objects.
     """
-    if not table_data or not table_data[0]:
-        return ""
+    if doc.is_encrypted and not doc.authenticate(""):
+        raise ValueError(
+            "PDF document is password-protected/encrypted and cannot be parsed."
+        )
 
-    headers = [
-        str(cell or "").strip().replace("\n", " ").replace("|", "\\|")
-        for cell in table_data[0]
-    ]
-    if not any(headers):
-        headers = [f"Col {i + 1}" for i in range(len(table_data[0]))]
+    page_data = pymupdf4llm.to_markdown(doc, page_chunks=True)
+    pages: list[ParsedPage] = []
 
-    rows = []
-    for r in table_data[1:]:
-        clean_row = [
-            str(cell or "").strip().replace("\n", " ").replace("|", "\\|") for cell in r
-        ]
-        rows.append(clean_row)
+    for idx, page in enumerate(page_data):
+        raw_page = page.get("metadata", {}).get("page_number", idx + 1)
+        try:
+            page_number = int(raw_page)
+        except (ValueError, TypeError):
+            page_number = idx + 1
 
-    header_line = "| " + " | ".join(headers) + " |"
-    separator_line = "| " + " | ".join(["---"] * len(headers)) + " |"
-    row_lines = []
-    for row in rows:
-        if len(row) < len(headers):
-            row += [""] * (len(headers) - len(row))
-        elif len(row) > len(headers):
-            row = row[: len(headers)]
-        row_lines.append("| " + " | ".join(row) + " |")
+        text = page.get("text", "").strip()
 
-    return (
-        "\n" + header_line + "\n" + separator_line + "\n" + "\n".join(row_lines) + "\n"
-    )
+        if not text:
+            logger.debug(f"Skipping empty or whitespace-only page {page_number}")
+            continue
+
+        pages.append({"page_number": page_number, "text": text})
+
+    return pages
 
 
-def is_overlapping(
-    bbox_a: tuple[float, float, float, float],
-    bbox_b: tuple[float, float, float, float],
-    threshold: float = 0.4,
-) -> bool:
+def parse_pdf_pages(file_path: str) -> list[ParsedPage]:
     """
-    Checks if bounding box A overlaps bounding box B by more than the threshold ratio of A's area.
-    Bounding box format: (x0, y0, x1, y1)
+    Parses a PDF file from a local filesystem path.
+    Returns a list of ParsedPage dicts containing the 1-indexed page_number and non-empty Markdown text.
     """
-    ax0, ay0, ax1, ay1 = bbox_a
-    bx0, by0, bx1, by1 = bbox_b
-
-    ix0 = max(ax0, bx0)
-    iy0 = max(ay0, by0)
-    ix1 = min(ax1, bx1)
-    iy1 = min(ay1, by1)
-
-    if ix1 <= ix0 or iy1 <= iy0:
-        return False
-
-    intersection_area = (ix1 - ix0) * (iy1 - iy0)
-    area_a = (ax1 - ax0) * (ay1 - ay0)
-
-    if area_a <= 0:
-        return False
-
-    return (intersection_area / area_a) >= threshold
-
-
-def parse_pdf_pages(file_path: str) -> Generator[ParsedPage, None, None]:
-    """
-    Lazily streams parsed page text and tables from a PDF file.
-    Keeps RAM usage extremely low by only loading one page at a time.
-    """
-    logger.info(f"Opening PDF file for streaming parsing: {file_path}")
-    doc = None
+    logger.info(f"Opening PDF file for parsing: {file_path}")
     try:
-        doc = fitz.open(file_path)
-        for page_idx, page in enumerate(doc):
-            page_number = page_idx + 1
-
-            tables = page.find_tables()
-            table_bboxes = []
-            table_markdowns = {}
-
-            for t in tables.tables:
-                bbox = t.bbox
-                table_bboxes.append(bbox)
-                try:
-                    table_md = table_to_markdown(t.extract())
-                    table_markdowns[bbox] = table_md
-                except Exception as table_err:
-                    logger.warning(
-                        f"Failed to extract table on page {page_number}: {table_err}"
-                    )
-
-            blocks = page.get_text("blocks")
-            elements = []
-
-            for bbox, md in table_markdowns.items():
-                elements.append((bbox[1], bbox[0], "table", md, bbox))
-
-            for block in blocks:
-                block_bbox = block[:4]
-                text = block[4].strip()
-                if not text:
-                    continue
-
-                in_table = False
-                for t_bbox in table_bboxes:
-                    if is_overlapping(block_bbox, t_bbox, threshold=0.4):
-                        in_table = True
-                        break
-
-                if in_table:
-                    continue
-
-                elements.append(
-                    (block_bbox[1], block_bbox[0], "text", text, block_bbox)
-                )
-
-            elements.sort(key=lambda x: (x[0], x[1]))
-
-            page_contents = []
-            for elem in elements:
-                content = elem[3]
-                page_contents.append(content)
-
-            assembled_text = "\n\n".join(page_contents).strip()
-
-            yield {"page_number": page_number, "text": assembled_text}
-
+        with fitz.open(file_path) as doc:
+            return _extract_markdown_pages(doc)
+    except fitz.EmptyFileError as e:
+        logger.error(f"Empty PDF file provided at {file_path}: {e}")
+        raise ValueError(f"The provided PDF file is empty (0 bytes): {file_path}") from e
+    except fitz.FileDataError as e:
+        logger.error(f"Corrupt or invalid PDF file at {file_path}: {e}")
+        raise ValueError(
+            f"The provided file is corrupted, invalid, or unreadable: {file_path}"
+        ) from e
     except Exception as e:
-        logger.error(f"Error parsing PDF file {file_path}: {e}", exc_info=True)
+        logger.error(f"Unexpected error parsing PDF file {file_path}: {e}", exc_info=True)
         raise e
-    finally:
-        if doc:
-            doc.close()
-            logger.info(f"Closed PDF file: {file_path}")
+
+
+def parse_pdf_bytes(file_bytes: bytes) -> list[ParsedPage]:
+    """
+    Parses a PDF from raw in-memory bytes (e.g. from FastAPI file uploads).
+    Returns a list of ParsedPage dicts containing the 1-indexed page_number and non-empty Markdown text.
+    """
+    if not file_bytes:
+        raise ValueError("Cannot parse empty (0 bytes) PDF payload.")
+
+    try:
+        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+            return _extract_markdown_pages(doc)
+    except fitz.EmptyFileError as e:
+        logger.error(f"Empty PDF byte stream provided: {e}")
+        raise ValueError("The provided PDF byte stream is empty (0 bytes).") from e
+    except fitz.FileDataError as e:
+        logger.error(f"Corrupt or invalid PDF byte stream: {e}")
+        raise ValueError(
+            "The uploaded file is corrupted, invalid, or not a valid PDF document."
+        ) from e
+    except Exception as e:
+        logger.error(f"Unexpected error parsing in-memory PDF bytes: {e}", exc_info=True)
+        raise e

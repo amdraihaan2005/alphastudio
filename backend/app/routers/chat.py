@@ -8,7 +8,7 @@ from fastapi import (
     BackgroundTasks,
 )
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from uuid import UUID
 from typing import List
 
@@ -158,7 +158,9 @@ async def chat_stream(
     db.commit()
 
     return StreamingResponse(
-        orchestrate_chat_stream(request.thread_id, new_user_msg.content),
+        orchestrate_chat_stream(
+            request.thread_id, new_user_msg.content, user_id=current_user.id
+        ),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no"},
     )
@@ -172,11 +174,27 @@ def get_chunk_details(
 ):
     """
     Retrieve document chunk details along with context from surrounding chunks.
+    Validates that private document chunks are only accessible to the owning user.
     """
-    chunk = db.query(DocumentChunk).filter(DocumentChunk.id == chunk_id).first()
+    chunk = (
+        db.query(DocumentChunk)
+        .options(joinedload(DocumentChunk.document))
+        .filter(DocumentChunk.id == chunk_id)
+        .first()
+    )
     if not chunk:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Document chunk not found"
+        )
+
+    # Authorization guard: private documents are strictly scoped to the owner
+    if (
+        chunk.document.user_id is not None
+        and chunk.document.user_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to view this document chunk.",
         )
 
     preceding_chunk = (
