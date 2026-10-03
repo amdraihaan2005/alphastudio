@@ -1,24 +1,22 @@
 """
-Upload ingestion service: handles streaming PDF bytes -> parse -> chunk -> embed -> save.
-Reuses the existing parser/chunker/embedder pipeline from Phase 0–5 ingest.
+Upload ingestion service: coordinates PDF ingestion as an application service layer (traffic cop).
+Delegates CPU-bound extraction and AI vector embedding to the async orchestrator,
+and wraps persistence strictly inside a short-lived ACID database transaction with rollback.
 """
 
-import time
 import logging
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.database.models.source_document import SourceDocument
 from app.database.models.document_chunk import DocumentChunk
-from app.ingest.chunker import chunk_page
-from app.ingest.embedder import get_embeddings
-from app.ingest.parser import parse_pdf_bytes
+from app.database.models.source_document import SourceDocument
+from app.ingest.orchestrator import process_pdf_to_embeddings
 
 logger = logging.getLogger(__name__)
 
 
-def ingest_uploaded_document(
+async def ingest_uploaded_document(
     db: Session,
     user_id: UUID,
     filename: str,
@@ -26,76 +24,59 @@ def ingest_uploaded_document(
 ) -> SourceDocument:
     """
     Parse, chunk, embed, and persist a user-uploaded PDF.
-    Returns the saved SourceDocument instance.
 
-    Raises ValueError for non-text PDFs (zero extractable content).
-    Raises RuntimeError on any upstream embedding failure.
+    PHASE 1 (Data & AI):
+      Delegates parsing, chunking, enriched prefixing, and Cohere embeddings
+      to the asynchronous orchestrator *before* touching the database.
+      Zero database sessions or connections are held during CPU/API execution.
+
+    PHASE 2 (ACID DB Transaction):
+      Strictly encapsulates database insertion, foreign key mapping, and commit
+      inside a millisecond-duration transaction with explicit rollback on error.
     """
     logger.info(f"Starting upload ingestion for '{filename}' user={user_id}")
 
-    pages = parse_pdf_bytes(file_bytes)
-    logger.info(f"Extracted {len(pages)} non-empty pages from upload '{filename}'")
+    # PHASE 1: Offload extraction, chunking, and AI embedding to orchestrator
+    chunks, embeddings = await process_pdf_to_embeddings(file_bytes, filename)
 
-    if not pages:
+    if not chunks:
         raise ValueError(f"No extractable text found in '{filename}'. Cannot ingest.")
 
-    all_chunks = []
-    header_stack: list[tuple[int, str]] = []
-    chunk_idx = 0
-
-    for page in pages:
-        page_chunks, header_stack = chunk_page(
-            page_text=page["text"],
-            page_number=page["page_number"],
-            start_chunk_idx=chunk_idx,
-            header_stack=header_stack,
-            chunk_size=1000,
-            chunk_overlap=200,
-        )
-        all_chunks.extend(page_chunks)
-        chunk_idx += len(page_chunks)
-
-    logger.info(f"Chunked '{filename}': {len(all_chunks)} chunks. Embedding...")
-
-    batch_size = 20
-    embeddings: list = []
-    for i in range(0, len(all_chunks), batch_size):
-        if i > 0:
-            time.sleep(3.0)
-        chunk_batch = all_chunks[i : i + batch_size]
-        batch_texts = [c["text_content"] for c in chunk_batch]
-        batch_prefixes = [
-            f"Document: {filename} | Section: {c['section_name'] or 'General'}"
-            for c in chunk_batch
-        ]
-        embeddings.extend(get_embeddings(batch_texts, prefixes=batch_prefixes))
-
-    logger.info(f"Embedding complete for '{filename}'. Saving to DB...")
-
-    db_doc = SourceDocument(
-        filename=filename,
-        user_id=user_id,
-        ticker="USER_UPLOAD",
-        filing_type="CUSTOM",
-        year=0,
+    logger.info(
+        f"Embedding complete for '{filename}' ({len(chunks)} chunks). Persisting to database..."
     )
-    db.add(db_doc)
-    db.flush()
 
-    db_chunks = [
-        DocumentChunk(
-            source_document_id=db_doc.id,
-            chunk_index=chunk["chunk_index"],
-            page_number=chunk["page_number"],
-            section_name=chunk["section_name"],
-            text_content=chunk["text_content"],
-            embedding=embeddings[i],
+    # PHASE 2: ACID Database Transaction strictly wrapping SQL operations
+    try:
+        db_doc = SourceDocument(
+            filename=filename,
+            user_id=user_id,
+            ticker="USER_UPLOAD",
+            filing_type="CUSTOM",
+            year=0,
         )
-        for i, chunk in enumerate(all_chunks)
-    ]
-    db.bulk_save_objects(db_chunks)
-    db.commit()
-    db.refresh(db_doc)
+        db.add(db_doc)
+        db.flush()
 
-    logger.info(f"Saved '{filename}' ({len(db_chunks)} chunks) for user={user_id}")
-    return db_doc
+        db_chunks = [
+            DocumentChunk(
+                source_document_id=db_doc.id,
+                chunk_index=chunk["chunk_index"],
+                page_number=chunk["page_number"],
+                section_name=chunk["section_name"],
+                text_content=chunk["text_content"],
+                embedding=embeddings[i],
+            )
+            for i, chunk in enumerate(chunks)
+        ]
+        db.bulk_save_objects(db_chunks)
+        db.commit()
+        db.refresh(db_doc)
+
+        logger.info(f"Successfully saved '{filename}' ({len(db_chunks)} chunks) for user={user_id}")
+        return db_doc
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Database transaction failed for '{filename}', rolled back: {e}", exc_info=True)
+        raise RuntimeError(f"Database error during document ingestion for '{filename}': {e}") from e

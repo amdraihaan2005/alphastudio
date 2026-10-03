@@ -1,8 +1,8 @@
+import asyncio
 import os
 import json
 import logging
 import sys
-import time
 from sqlalchemy.orm import Session
 
 from app.database.connection import SessionLocal
@@ -67,22 +67,12 @@ def ingest_document(db: Session, doc_metadata: dict, pdf_file_path: str) -> None
             )
             return
 
-        batch_size = 20
-        embeddings = []
-
-        for i in range(0, len(all_chunks), batch_size):
-            if i > 0:
-                time.sleep(3.0)
-
-            chunk_batch = all_chunks[i : i + batch_size]
-            batch_texts = [c["text_content"] for c in chunk_batch]
-            batch_prefixes = [
-                f"Document: {company} ({year}) {filing_type} | Section: {c['section_name'] or 'General'}"
-                for c in chunk_batch
-            ]
-
-            batch_embeddings = get_embeddings(batch_texts, prefixes=batch_prefixes)
-            embeddings.extend(batch_embeddings)
+        chunk_texts = [c["text_content"] for c in all_chunks]
+        chunk_prefixes = [
+            f"Document: {company} ({year}) {filing_type} | Section: {c['section_name'] or 'General'}"
+            for c in all_chunks
+        ]
+        embeddings = asyncio.run(get_embeddings(chunk_texts, prefixes=chunk_prefixes))
 
         logger.info(
             f"Successfully generated embeddings for all {len(all_chunks)} chunks."

@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, and_
@@ -27,7 +28,7 @@ def retrieve_hybrid(
     if not query_text.strip():
         return []
 
-    query_embedding = get_query_embedding(query_text)
+    query_embedding = asyncio.run(get_query_embedding(query_text))
 
     candidate_limit = limit * 4
     semantic_results = semantic_search(

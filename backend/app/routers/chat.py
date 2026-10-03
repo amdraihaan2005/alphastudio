@@ -285,7 +285,7 @@ async def upload_document(
             ),
         )
 
-    def _run_ingestion():
+    async def _run_ingestion():
         from app.database.connection import SessionLocal
         from app.ingest.upload_service import ingest_uploaded_document
         import logging
@@ -293,7 +293,7 @@ async def upload_document(
         logger = logging.getLogger(__name__)
         session = SessionLocal()
         try:
-            ingest_uploaded_document(session, user_id, filename, file_bytes)
+            await ingest_uploaded_document(session, user_id, filename, file_bytes)
         except Exception as exc:
             logger.error(
                 f"Background ingestion failed for '{filename}': {exc}", exc_info=True

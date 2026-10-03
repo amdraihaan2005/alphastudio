@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = Field(default="embed-english-v3.0")
     EMBEDDING_DIMENSIONS: int = Field(default=1024)
 
+    GET_EMBEDDINGS_RETRIES: int = Field(default=5)
+    GET_EMBEDDINGS_DELAY: float = Field(default=5.0)
+    GET_QUERY_RETRIES: int = Field(default=4)
+    GET_QUERY_DELAY: float = Field(default=2.0)
+    COHERE_MAX_BATCH_SIZE: int = Field(default=96)
+    MAX_CONCURRENT_EMBED_REQUESTS: int = Field(default=5)
+
     model_config = SettingsConfigDict(
         env_file=os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"
