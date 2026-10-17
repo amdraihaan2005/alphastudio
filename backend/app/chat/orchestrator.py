@@ -105,16 +105,12 @@ async def orchestrate_chat_stream(
         agent_result = await agent.run(user_query, deps=deps)
         candidate_text = str(getattr(agent_result, "output", getattr(agent_result, "data", agent_result)))
 
-        # Normalize unicode and brackets for robust citation extraction
-        normalized_text = candidate_text.replace("【", "[").replace("】", "]")
-        normalized_text = re.sub(
-            r"[\u200b\u200f\u202f\u00a0\u2002\u2003\u2009]", " ", normalized_text
-        )
-
         # STRICT FAIL-CLOSED VALIDATION:
+        # validate_citations performs its own unicode normalization internally
+        # (brackets 【】→[], zero-width chars, non-breaking spaces).
         # If citations fail validation, GroundingValidationError is raised HERE,
-        # BEFORE any token has been emitted to the user's screen!
-        validated_citations = validate_citations(normalized_text, deps.retrieved_chunks)
+        # BEFORE any token has been emitted to the user's screen.
+        validated_citations = validate_citations(candidate_text, deps.retrieved_chunks)
 
         # Persist to database in threadpool
         await run_in_threadpool(
@@ -122,7 +118,7 @@ async def orchestrate_chat_stream(
             db,
             assistant_msg_id,
             thread_id,
-            normalized_text,
+            candidate_text,
             validated_citations,
         )
 
@@ -136,7 +132,7 @@ async def orchestrate_chat_stream(
         yield format_start_part(assistant_msg_id_str)
 
         # Stream words/tokens smoothly for UI typing experience
-        words = re.findall(r"\S+|\s+", normalized_text)
+        words = re.findall(r"\S+|\s+", candidate_text)
         batch = []
         for word in words:
             batch.append(word)

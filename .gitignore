@@ -31,8 +31,18 @@ frontend/dist/
 frontend/dist-ssr/
 frontend/routeStats.json
 
-# Large binary report files (keep scripts and manifest.json)
-data/downloads/*.pdf
+# Offline Data & Staging (Not needed for runtime application)
+data/
+
+# Literature Review & Patent Screenshots (Research files)
+litrev/
+
+# AI Agent Developer Tooling
+.agent/
+
+# Test Suites (Ignored per user request)
+tests/
+backend/tests/
 
 # System & OS Files
 .DS_Store

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { getChunkDetails, type ChunkDetailsResponse } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,7 +11,8 @@ import {
   Calendar, 
   ChevronDown, 
   ChevronUp,
-  FileText
+  FileText,
+  RotateCcw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -27,43 +28,41 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
   const [showPreceding, setShowPreceding] = useState(false);
   const [showSucceeding, setShowSucceeding] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
+  const fetchDetails = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      setShowPreceding(false);
+      setShowSucceeding(false);
 
-    async function fetchDetails() {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        setShowPreceding(false);
-        setShowSucceeding(false);
-
-        const data = await getChunkDetails(chunkId);
-        if (isMounted) {
-          setChunk(data);
-        }
-      } catch (err) {
-        console.error('Error fetching chunk details:', err);
-        if (isMounted) {
-          setError(err instanceof Error ? err.message : 'Failed to retrieve chunk context.');
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
+      const data = await getChunkDetails(chunkId);
+      setChunk(data);
+    } catch (err) {
+      console.error('Error fetching chunk details:', err);
+      setError(err instanceof Error ? err.message : 'Failed to retrieve chunk context.');
+    } finally {
+      setLoading(false);
     }
-
-    fetchDetails();
-
-    return () => {
-      isMounted = false;
-    };
   }, [chunkId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchDetails();
+  }, [fetchDetails]);
+
+  // Display normalization helpers
+  const displayCompany = chunk?.document.ticker === 'USER_UPLOAD'
+    ? 'Private Document'
+    : (chunk?.document.ticker || 'Filing Source');
+
+  const displayYear = chunk?.document.year && chunk.document.year > 0
+    ? `FY${chunk.document.year}`
+    : (chunk?.document.filing_type && chunk.document.filing_type !== 'CUSTOM' ? chunk.document.filing_type : 'Custom Upload');
 
   return (
     <div className="w-96 md:w-[420px] border-l border-slate-900 bg-[#060813]/95 backdrop-blur-md flex flex-col h-full shrink-0 select-none animate-slide-in relative z-30">
-      {}
+      {/* Header */}
       <header className="h-16 px-6 border-b border-slate-900 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
@@ -79,12 +78,13 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
         <button
           onClick={onClose}
           className="text-slate-500 hover:text-slate-300 p-1.5 hover:bg-slate-900/50 rounded-lg transition-all cursor-pointer"
+          title="Close panel"
         >
           <X className="h-4 w-4" />
         </button>
       </header>
 
-      {}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-none select-text">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400">
@@ -92,40 +92,47 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
             <p className="text-xs font-medium font-mono">Retrieving source excerpt...</p>
           </div>
         ) : error ? (
-          <div className="rounded-xl bg-red-500/5 border border-red-500/10 p-4 text-center">
+          <div className="rounded-xl bg-red-500/5 border border-red-500/10 p-5 text-center">
             <AlertCircle className="h-7 w-7 text-red-500/60 mx-auto mb-2" />
             <h4 className="text-xs font-semibold text-slate-200">Context load failed</h4>
             <p className="text-[10px] text-slate-500 mt-1">{error}</p>
+            <button
+              onClick={fetchDetails}
+              className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 rounded-lg transition-colors cursor-pointer"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span>Retry</span>
+            </button>
           </div>
         ) : chunk ? (
           <>
-            {}
+            {/* Document Metadata Card */}
             <div className="grid grid-cols-2 gap-2 bg-slate-900/35 border border-slate-800/60 p-3.5 rounded-xl">
               <div className="flex items-center gap-2 text-slate-400">
-                <Building2 className="h-3.5 w-3.5 text-slate-500" />
-                <div className="flex flex-col">
+                <Building2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                <div className="flex flex-col min-w-0">
                   <span className="text-[8px] font-bold text-slate-600 uppercase font-mono tracking-wider">Company</span>
-                  <span className="text-xs font-semibold text-slate-300 truncate">{chunk.document.ticker}</span>
+                  <span className="text-xs font-semibold text-slate-300 truncate" title={displayCompany}>{displayCompany}</span>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-slate-400">
-                <Calendar className="h-3.5 w-3.5 text-slate-500" />
-                <div className="flex flex-col">
-                  <span className="text-[8px] font-bold text-slate-600 uppercase font-mono tracking-wider">Filing Year</span>
-                  <span className="text-xs font-semibold text-slate-300">FY{chunk.document.year}</span>
+                <Calendar className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[8px] font-bold text-slate-600 uppercase font-mono tracking-wider">Filing Reference</span>
+                  <span className="text-xs font-semibold text-slate-300 truncate" title={displayYear}>{displayYear}</span>
                 </div>
               </div>
               <div className="col-span-2 border-t border-slate-800/60 my-1"></div>
               <div className="col-span-2 flex items-center gap-2 text-slate-400">
-                <FileText className="h-3.5 w-3.5 text-slate-500" />
+                <FileText className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                 <div className="flex flex-col min-w-0">
                   <span className="text-[8px] font-bold text-slate-600 uppercase font-mono tracking-wider">Filing / File</span>
-                  <span className="text-[11px] font-semibold text-slate-300 truncate font-mono">{chunk.document.filename}</span>
+                  <span className="text-[11px] font-semibold text-slate-300 truncate font-mono" title={chunk.document.filename}>{chunk.document.filename}</span>
                 </div>
               </div>
             </div>
 
-            {}
+            {/* Section & Page */}
             <div className="space-y-1">
               <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest font-mono">Location Context</span>
               <h3 className="text-sm font-bold text-slate-200">
@@ -134,9 +141,9 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
               <p className="text-xs text-slate-500 font-medium">Page {chunk.page_number}</p>
             </div>
 
-            {}
+            {/* Chunk Context Flow */}
             <div className="space-y-4">
-              {}
+              {/* Preceding Chunk Accordion */}
               {chunk.preceding_text && (
                 <div className="border border-slate-800/50 rounded-xl overflow-hidden bg-slate-900/10">
                   <button
@@ -154,7 +161,7 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
                 </div>
               )}
 
-              {}
+              {/* Cited Chunk Core Block */}
               <div className="relative rounded-xl border border-blue-500/10 bg-gradient-to-b from-blue-950/5 to-indigo-950/5 p-5 shadow-inner">
                 <div className="absolute top-2.5 right-3 px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 font-mono text-[9px] font-bold tracking-wider select-none">
                   CITED TEXT
@@ -164,7 +171,7 @@ export default function SourcePassagePanel({ chunkId, onClose }: SourcePassagePa
                 </div>
               </div>
 
-              {}
+              {/* Succeeding Chunk Accordion */}
               {chunk.succeeding_text && (
                 <div className="border border-slate-800/50 rounded-xl overflow-hidden bg-slate-900/10">
                   <button

@@ -3,8 +3,12 @@ from typing import Any
 
 
 def format_start_part(message_id: str) -> str:
-    payload = {"type": "text-start", "id": message_id}
-    return f"event: data\ndata: {json.dumps(payload)}\n\n"
+    start_payload = {"type": "start", "messageId": message_id}
+    text_start_payload = {"type": "text-start", "id": message_id}
+    return (
+        f"event: data\ndata: {json.dumps(start_payload)}\n\n"
+        f"event: data\ndata: {json.dumps(text_start_payload)}\n\n"
+    )
 
 
 def format_text_part(text: str, message_id: str) -> str:

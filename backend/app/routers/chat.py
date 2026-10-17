@@ -123,8 +123,8 @@ async def chat_stream(
     db: Session = Depends(get_db),
 ):
     """
-    Accepts the chat message history, performs hybrid retrieval, invokes PydanticAI
-    agent, runs grounding check, and streams response in Vercel AI SDK compatible format.
+    Accepts the chat message history, performs hybrid retrieval, invokes the LangChain
+    document agent, runs grounding check, and streams response in Vercel AI SDK compatible format.
     """
     thread = db.query(ChatThread).filter(ChatThread.id == request.thread_id).first()
     if not thread:

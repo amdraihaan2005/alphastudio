@@ -1,7 +1,9 @@
-import re
 import logging
-from typing import TypedDict, List
+import re
+from typing import Any, List, Sequence, TypedDict, Union
 from uuid import UUID
+
+from langchain_core.documents import Document
 
 logger = logging.getLogger(__name__)
 
@@ -18,15 +20,16 @@ class GroundingValidationError(Exception):
 class ValidatedCitation(TypedDict):
     filename: str
     page_number: int
-    chunk_id: UUID
+    chunk_id: UUID | None
 
 
 def validate_citations(
-    text: str, retrieved_chunks: List[dict]
+    text: str, retrieved_chunks: Sequence[Union[dict[str, Any], Document]]
 ) -> List[ValidatedCitation]:
     """
     Extracts all inline citations from the text (format: [FILENAME, Page X])
     and validates that each cited file and page number exists in the retrieved_chunks pool.
+    Natively supports both LangChain Document objects and legacy retrieval dictionaries.
 
     Raises GroundingValidationError if any citation is ungrounded (fail closed).
     Returns a list of validated citations with their database chunk IDs.
@@ -59,16 +62,33 @@ def validate_citations(
             continue
 
         is_grounded = False
-        matching_chunk_id = None
+        matching_chunk_id: UUID | None = None
 
         for r in retrieved_chunks:
-            c = r["chunk"]
+            if isinstance(r, Document):
+                cand_filename = str(r.metadata.get("source", ""))
+                cand_page = r.metadata.get("page")
+                cand_id = r.metadata.get("chunk_id")
+            elif isinstance(r, dict) and "chunk" in r:
+                c = r["chunk"]
+                cand_filename = getattr(c.document, "filename", "")
+                cand_page = getattr(c, "page_number", None)
+                cand_id = getattr(c, "id", None)
+            else:
+                continue
+
             if (
-                c.document.filename.lower() == clean_filename.lower()
-                and c.page_number == page_num
+                cand_filename.lower() == clean_filename.lower()
+                and cand_page == page_num
             ):
                 is_grounded = True
-                matching_chunk_id = c.id
+                if isinstance(cand_id, str):
+                    try:
+                        matching_chunk_id = UUID(cand_id)
+                    except ValueError:
+                        matching_chunk_id = None
+                else:
+                    matching_chunk_id = cand_id
                 break
 
         if not is_grounded:

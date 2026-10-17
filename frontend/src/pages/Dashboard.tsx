@@ -1,17 +1,18 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import {
   listThreads, createThread, deleteThread, type ThreadResponse,
-  listUserDocuments, deleteDocument, listPublicDocuments, type UserDocument,
+  listUserDocuments, deleteDocument, listPublicDocuments, type UserDocument, type PublicDocument,
+  uploadDocument
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import ChatWindow from '@/components/ChatWindow';
-import { env } from '@/lib/env';
 import {
   LogOut, User, MessageSquare, Trash2, Plus, Loader2,
   AlertCircle, HelpCircle, Paperclip, ArrowRight, Search,
-  Database, CheckCircle2, X, Lock, AlertTriangle,
+  Database, CheckCircle2, X, Lock, AlertTriangle, RotateCcw,
+  Sparkles
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -21,15 +22,15 @@ interface PendingDoc {
   timedOut?: boolean;
 }
 
-interface PublicDoc {
-  id: string;
-  filename: string;
-  ticker: string;
-  year: number;
-}
-
 const INGESTION_TIMEOUT_MS = 10 * 60 * 1000;
 const POLLING_INTERVAL_MS = 4_000;
+
+const SUGGESTED_QUERIES = [
+  "Compare TCS vs Reliance operating margin FY24",
+  "Summarize key risk factors in Reliance FY24",
+  "What was TCS dividend payout ratio in FY24?",
+  "Analyze capital expenditure trends across available filings",
+];
 
 export default function Dashboard() {
   const { threadId } = useParams<{ threadId: string }>();
@@ -47,91 +48,61 @@ export default function Dashboard() {
 
   const [userDocs, setUserDocs] = useState<UserDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
   const [deletingDocIds, setDeletingDocIds] = useState<Set<string>>(new Set());
 
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const [publicDocs, setPublicDocs] = useState<PublicDoc[]>([]);
+  const [publicDocs, setPublicDocs] = useState<PublicDocument[]>([]);
 
   const homeFileInputRef = useRef<HTMLInputElement>(null);
   const [homeUploadState, setHomeUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const [homeUploadName, setHomeUploadName] = useState<string | null>(null);
   const [homeUploadError, setHomeUploadError] = useState<string | null>(null);
 
+  // Robust polling for pending document ingestion: active only while pending docs exist
+  const hasActivePending = pendingDocs.some(p => !p.timedOut);
+
   useEffect(() => {
-    const activePending = pendingDocs.filter(p => !p.timedOut);
+    if (!hasActivePending) return;
 
-    if (activePending.length === 0) {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
-      return;
-    }
-
-    if (pollingRef.current) return; 
-
-    pollingRef.current = setInterval(async () => {
+    const interval = setInterval(async () => {
       try {
         const docs = await listUserDocuments();
         setUserDocs(docs);
 
         setPendingDocs(prev =>
           prev.map(pd => {
-            if (pd.timedOut) return pd; 
-            const found = docs.some(d => d.filename === pd.filename);
-            if (found) return null as unknown as PendingDoc;
+            if (pd.timedOut) return pd;
+            const found = docs.some(d => d.filename.toLowerCase() === pd.filename.toLowerCase());
+            if (found) return null;
             const timedOut = Date.now() - pd.startTime > INGESTION_TIMEOUT_MS;
             return timedOut ? { ...pd, timedOut: true } : pd;
           }).filter(Boolean) as PendingDoc[]
         );
       } catch (err) {
-        void err;
+        console.warn('Failed to poll ingested documents:', err);
       }
     }, POLLING_INTERVAL_MS);
 
-    return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
-    };
-  }, [pendingDocs]);
+    return () => clearInterval(interval);
+  }, [hasActivePending]);
 
   const handleHomeFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setHomeUploadError('Only PDF files are supported.');
-      setHomeUploadState('error');
-      return;
-    }
+
     setHomeUploadName(file.name);
     setHomeUploadState('uploading');
     setHomeUploadError(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
-
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const res = await fetch(`${env.API_BASE_URL}/chat/upload`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.detail || `Upload failed (${res.status})`);
-      }
-
+      await uploadDocument(file);
       setHomeUploadState('success');
       setPendingDocs(prev => [...prev, { filename: file.name, startTime: Date.now() }]);
-      setTimeout(() => { setHomeUploadState('idle'); setHomeUploadName(null); }, 4000);
+      setTimeout(() => {
+        setHomeUploadState('idle');
+        setHomeUploadName(null);
+      }, 4000);
     } catch (err) {
       setHomeUploadError(err instanceof Error ? err.message : 'Upload failed.');
       setHomeUploadState('error');
@@ -164,29 +135,29 @@ export default function Dashboard() {
     }
   }, []);
 
+  const loadDocs = useCallback(async () => {
+    setDocsLoading(true);
+    setDocsError(null);
+    try {
+      const [myDocs, pubDocs] = await Promise.all([
+        listUserDocuments(),
+        listPublicDocuments(),
+      ]);
+      setUserDocs(myDocs);
+      setPublicDocs(pubDocs);
+    } catch (err) {
+      console.error('Failed to load documents:', err);
+      setDocsError(err instanceof Error ? err.message : 'Failed to load documents.');
+    } finally {
+      setDocsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadDashboardData();
-  }, [loadDashboardData]);
-
-  useEffect(() => {
-    async function loadDocs() {
-      setDocsLoading(true);
-      try {
-        const [myDocs, pubDocs] = await Promise.all([
-          listUserDocuments(),
-          listPublicDocuments(),
-        ]);
-        setUserDocs(myDocs);
-        setPublicDocs(pubDocs);
-      } catch (err) {
-        void err;
-      } finally {
-        setDocsLoading(false);
-      }
-    }
     void loadDocs();
-  }, []);
+  }, [loadDashboardData, loadDocs]);
 
   const handleCreateThread = async () => {
     try {
@@ -197,6 +168,7 @@ export default function Dashboard() {
       navigate(`/thread/${newThread.id}`);
     } catch (err) {
       console.error('Failed to create thread:', err);
+      alert(err instanceof Error ? err.message : 'Failed to create new session.');
     } finally {
       setCreatingThread(false);
     }
@@ -212,6 +184,7 @@ export default function Dashboard() {
       if (threadId === id) navigate('/');
     } catch (err) {
       console.error('Failed to delete thread:', err);
+      alert(err instanceof Error ? err.message : 'Failed to delete session.');
     }
   };
 
@@ -225,6 +198,7 @@ export default function Dashboard() {
       setUserDocs(prev => prev.filter(d => d.id !== docId));
     } catch (err) {
       console.error('Failed to delete document:', err);
+      alert(err instanceof Error ? err.message : 'Failed to delete document.');
     } finally {
       setDeletingDocIds(prev => {
         const next = new Set(prev);
@@ -238,27 +212,32 @@ export default function Dashboard() {
     if (!prompt.trim()) return;
     try {
       setCreatingThread(true);
-      const shortTitle = prompt.length > 25 ? `${prompt.substring(0, 25)}...` : prompt;
+      const shortTitle = prompt.length > 30 ? `${prompt.substring(0, 30)}...` : prompt;
       const newThread = await createThread(shortTitle);
       setThreads(prev => [newThread, ...prev]);
       setCentralInput('');
       navigate(`/thread/${newThread.id}`, { state: { initialPrompt: prompt } });
     } catch (err) {
       console.error('Failed to execute suggestion:', err);
+      alert(err instanceof Error ? err.message : 'Failed to start query session.');
     } finally {
       setCreatingThread(false);
     }
   };
 
-  const handleSignOut = async () => { await supabase.auth.signOut(); };
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
 
   const activeThread = threads.find(t => t.id === threadId);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#030712] text-slate-100 font-sans relative">
 
+      {/* Sidebar Navigation */}
       <aside className="w-72 border-r border-slate-900 bg-[#060813] flex flex-col h-full shrink-0 select-none">
 
+        {/* Brand */}
         <div className="h-16 px-6 border-b border-slate-900 flex items-center">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold text-sm shadow-md shadow-blue-500/20">
@@ -268,6 +247,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* New Thread CTA */}
         <div className="p-4">
           <button
             onClick={handleCreateThread}
@@ -282,8 +262,10 @@ export default function Dashboard() {
           </button>
         </div>
 
+        {/* Navigation Content */}
         <div className="flex-1 overflow-y-auto px-3 space-y-5 py-2 scrollbar-none">
 
+          {/* Conversations Section */}
           <div className="space-y-0.5">
             {loading ? (
               <div className="flex items-center justify-center py-6">
@@ -335,6 +317,7 @@ export default function Dashboard() {
             )}
           </div>
 
+          {/* User Uploaded Documents */}
           <div className="space-y-1.5">
             <div className="px-2 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono flex items-center gap-1.5 border-t border-slate-900 pt-3">
               <Database className="h-3 w-3" />
@@ -347,9 +330,16 @@ export default function Dashboard() {
                   <Loader2 className="h-3 w-3 animate-spin" />
                   <span>Loading...</span>
                 </div>
+              ) : docsError ? (
+                <div className="px-2 py-1.5 text-[10px] text-red-400/80 flex items-center justify-between">
+                  <span>Failed to load docs</span>
+                  <button onClick={loadDocs} className="text-blue-400 hover:underline">
+                    <RotateCcw className="h-2.5 w-2.5" />
+                  </button>
+                </div>
               ) : (
                 <>
-                  
+                  {/* Ingestion Indicators */}
                   {pendingDocs.map(pd => (
                     <div
                       key={pd.filename}
@@ -434,7 +424,7 @@ export default function Dashboard() {
                                 <span className="text-[9px] font-mono bg-slate-900 text-slate-500 px-1 py-0.5 rounded">PDF</span>
                                 <button
                                   onClick={() => handleDeleteDoc(doc.id, doc.filename)}
-                                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-all duration-200 ml-0.5"
+                                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-all duration-200 ml-0.5 cursor-pointer"
                                   title={`Delete ${doc.filename}`}
                                 >
                                   <Trash2 className="h-3 w-3 text-slate-600 hover:text-red-400 transition-colors" />
@@ -451,6 +441,7 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Pre-loaded Public Documents */}
           {publicDocs.length > 0 && (
             <div className="space-y-1.5">
               <div className="px-2 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono flex items-center gap-1.5 border-t border-slate-900 pt-3">
@@ -480,9 +471,10 @@ export default function Dashboard() {
           )}
         </div>
 
+        {/* User Account / Sign Out */}
         <div className="p-4 border-t border-slate-900 bg-[#060813] flex flex-col gap-3">
           <div className="flex items-center gap-3 px-1">
-            <div className="h-8 w-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-450">
+            <div className="h-8 w-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400">
               <User className="h-4 w-4" />
             </div>
             <div className="flex flex-col min-w-0">
@@ -500,6 +492,7 @@ export default function Dashboard() {
         </div>
       </aside>
 
+      {/* Main Workspace Area */}
       <main className="flex-1 h-full overflow-hidden bg-[#030712] relative flex flex-col">
         {activeThread ? (
           <ChatWindow
@@ -538,7 +531,11 @@ export default function Dashboard() {
                       {homeUploadState === 'error'    && (homeUploadError || 'Upload failed.')}
                     </span>
                   </div>
-                  <button type="button" onClick={() => { setHomeUploadState('idle'); setHomeUploadName(null); setHomeUploadError(null); }} className="shrink-0 opacity-60 hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => { setHomeUploadState('idle'); setHomeUploadName(null); setHomeUploadError(null); }}
+                    className="shrink-0 opacity-60 hover:opacity-100 cursor-pointer"
+                  >
                     <X className="h-3 w-3" />
                   </button>
                 </div>
@@ -553,8 +550,8 @@ export default function Dashboard() {
                 <textarea
                   value={centralInput}
                   onChange={e => setCentralInput(e.target.value)}
-                  placeholder="Ask anything..."
-                  className="w-full bg-transparent border-0 outline-none resize-none text-slate-200 placeholder-slate-550 text-sm h-20 focus:ring-0"
+                  placeholder="Ask anything about financial filings, metrics, or revenue..."
+                  className="w-full bg-transparent border-0 outline-none resize-none text-slate-200 placeholder-slate-500 text-sm h-20 focus:ring-0"
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}
                 />
                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-900/80">
@@ -568,7 +565,7 @@ export default function Dashboard() {
                     <button
                       type="button"
                       onClick={e => { e.preventDefault(); e.stopPropagation(); homeFileInputRef.current?.click(); }}
-                      disabled={homeUploadState === 'uploading'}
+                      disabled={homeUploadState === 'uploading' || creatingThread}
                       className="hover:text-blue-400 transition-colors p-1 cursor-pointer disabled:opacity-40"
                       title="Upload PDF document"
                     >
@@ -579,16 +576,38 @@ export default function Dashboard() {
                       disabled={!centralInput.trim() || creatingThread}
                       className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg p-1.5 shadow transition-colors cursor-pointer"
                     >
-                      <ArrowRight className="h-3.5 w-3.5" />
+                      {creatingThread ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
                     </button>
                   </div>
                 </div>
               </form>
+
+              {/* Quick Query Suggestions */}
+              <div className="pt-2 text-left">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono flex items-center gap-1.5 mb-2.5">
+                  <Sparkles className="h-3 w-3 text-blue-400" />
+                  <span>Suggested Research Queries</span>
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {SUGGESTED_QUERIES.map((q, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleSuggestionClick(q)}
+                      disabled={creatingThread}
+                      className="text-left text-xs bg-slate-900/30 hover:bg-blue-950/20 border border-slate-800/60 hover:border-blue-500/30 p-2.5 rounded-xl text-slate-350 hover:text-slate-200 transition-all cursor-pointer truncate"
+                      title={q}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}
       </main>
 
+      {/* Floating Documentation Guide Trigger */}
       <div className="absolute bottom-6 right-6 z-30">
         <button
           onClick={() => setShowGuide(true)}
@@ -599,6 +618,7 @@ export default function Dashboard() {
         </button>
       </div>
 
+      {/* Guide Dialog */}
       {showGuide && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-[#0b0f19] border border-slate-800 rounded-2xl w-full max-w-md p-6 text-slate-200 shadow-2xl relative space-y-4">

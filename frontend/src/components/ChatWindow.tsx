@@ -1,9 +1,10 @@
-import { useEffect, useState, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useChat, type UIMessage } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { supabase } from '@/lib/supabase';
-import { getThreadMessages, type CitationResponse } from '@/lib/api';
+import { getThreadMessages, uploadDocument, type CitationResponse } from '@/lib/api';
+import { getValidAccessToken } from '@/lib/http';
 import { env } from '@/lib/env';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -16,9 +17,10 @@ import {
   Search,
   ArrowRight,
   CheckCircle2,
-  X
+  X,
+  RotateCcw
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, buildDisplayLabel } from '@/lib/utils';
 import SourcePassagePanel from './SourcePassagePanel';
 
 interface ChatWindowProps {
@@ -34,67 +36,52 @@ export default function ChatWindow({ threadId, threadTitle, onUploadStart }: Cha
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let isMounted = true;
+  const loadChatData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-    async function loadChatData() {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          throw new Error('No active Supabase session found.');
-        }
-        
-        if (isMounted) {
-          setToken(session.access_token);
-        }
-
-        const history = await getThreadMessages(threadId);
-        
-        if (isMounted) {
-          const formatted: UIMessage[] = history.map((msg) => ({
-            id: msg.id,
-            role: msg.role as 'user' | 'assistant',
-            parts: [{ type: 'text', text: msg.content }],
-          }));
-
-          const initialCits: Record<string, CitationResponse[]> = {};
-          history.forEach((msg) => {
-            if (msg.citations && msg.citations.length > 0) {
-              initialCits[msg.id] = msg.citations;
-            }
-          });
-
-          setInitialMessages(formatted);
-          setInitialCitations(initialCits);
-        }
-      } catch (err) {
-        console.error('Error loading chat data:', err);
-        if (isMounted) {
-          const errorMessage = err instanceof Error ? err.message : 'Failed to load thread history.';
-          setError(errorMessage);
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active Supabase session found. Please re-authenticate.');
       }
+      setToken(session.access_token);
+
+      const history = await getThreadMessages(threadId);
+
+      const formatted: UIMessage[] = (history || []).map((msg) => ({
+        id: msg.id,
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        parts: [{ type: 'text', text: msg.content || '' }],
+      }));
+
+      const initialCits: Record<string, CitationResponse[]> = {};
+      (history || []).forEach((msg) => {
+        if (msg.citations && msg.citations.length > 0) {
+          initialCits[msg.id] = msg.citations;
+        }
+      });
+
+      setInitialMessages(formatted);
+      setInitialCitations(initialCits);
+    } catch (err) {
+      console.error('Error loading chat data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load thread history.');
+    } finally {
+      setLoading(false);
     }
-
-    loadChatData();
-
-    return () => {
-      isMounted = false;
-    };
   }, [threadId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadChatData();
+  }, [loadChatData]);
 
   if (loading) {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-[#030712] text-slate-400 gap-3">
         <Loader2 className="h-7 w-7 animate-spin text-blue-400" />
-        <p className="text-sm font-medium text-slate-500">Loading conversation history...</p>
+        <p className="text-sm font-medium text-slate-500 font-mono text-xs">Loading conversation history...</p>
       </div>
     );
   }
@@ -107,6 +94,13 @@ export default function ChatWindow({ threadId, threadTitle, onUploadStart }: Cha
         </div>
         <h3 className="text-base font-semibold text-slate-200">Failed to load conversation</h3>
         <p className="text-sm text-slate-500 mt-1 max-w-md">{error}</p>
+        <button
+          onClick={loadChatData}
+          className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-blue-500/10 transition-colors cursor-pointer"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          <span>Retry Loading</span>
+        </button>
       </div>
     );
   }
@@ -125,7 +119,6 @@ export default function ChatWindow({ threadId, threadTitle, onUploadStart }: Cha
       threadId={threadId} 
       threadTitle={threadTitle} 
       initialMessages={initialMessages} 
-      token={token} 
       initialCitations={initialCitations}
       onUploadStart={onUploadStart}
     />
@@ -136,14 +129,14 @@ interface ChatAreaProps {
   threadId: string;
   threadTitle: string;
   initialMessages: UIMessage[];
-  token: string;
   initialCitations: Record<string, CitationResponse[]>;
   onUploadStart?: (filename: string) => void;
 }
 
-function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitations, onUploadStart }: ChatAreaProps) {
+function ChatArea({ threadId, threadTitle, initialMessages, initialCitations, onUploadStart }: ChatAreaProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
+  const navigate = useNavigate();
   const initialPromptRun = useRef(false);
   const [input, setInput] = useState('');
 
@@ -152,57 +145,37 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
   const [uploadFileName, setUploadFileName] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setUploadError('Only PDF files are supported.');
-      setUploadState('error');
-      return;
-    }
-    setUploadFileName(file.name);
-    setUploadState('uploading');
-    setUploadError(null);
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
-
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const res = await fetch(`${env.API_BASE_URL}/chat/upload`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.detail || `Upload failed (${res.status})`);
-      }
-
-      setUploadState('success');
-      
-      onUploadStart?.(file.name);
-      
-      setTimeout(() => { setUploadState('idle'); setUploadFileName(null); }, 4000);
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed.');
-      setUploadState('error');
-    } finally {
-      
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
   const [messageCitations, setMessageCitations] = useState<Record<string, CitationResponse[]>>(initialCitations);
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   
   const messagesRef = useRef<UIMessage[]>([]);
-  
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadFileName(file.name);
+    setUploadState('uploading');
+    setUploadError(null);
+
+    try {
+      await uploadDocument(file);
+      setUploadState('success');
+      onUploadStart?.(file.name);
+      setTimeout(() => {
+        setUploadState('idle');
+        setUploadFileName(null);
+      }, 4000);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed.');
+      setUploadState('error');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const { messages, sendMessage, status } = useChat({
     messages: initialMessages,
     transport: new DefaultChatTransport({
@@ -210,10 +183,13 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
       body: {
         thread_id: threadId,
       },
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      prepareSendMessagesRequest: ({ messages, body, headers, credentials, api }) => {
+      prepareSendMessagesRequest: async ({ messages, body, headers, credentials, api }) => {
+        // Dynamically retrieve the latest access token on every message turn to prevent expired JWT errors
+        const token = await getValidAccessToken();
+        const authHeaders: Record<string, string> = {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        };
+
         const formattedMessages = messages.map(msg => {
           const textContent = msg.parts
             .filter(p => p.type === 'text')
@@ -224,9 +200,13 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
             content: textContent
           };
         });
+
         return {
           api,
-          headers,
+          headers: {
+            ...authHeaders,
+            ...headers,
+          },
           credentials,
           body: {
             ...body,
@@ -239,16 +219,31 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
       if (dataPart.type === 'data-retrieved_context') {
         setPipelineStatus('Synthesizing grounded response...');
       } else if (dataPart.type === 'data-citations') {
-        const citations = (dataPart.data as Record<string, unknown>)?.citations as CitationResponse[] | undefined;
-        
-        const lastAssistantMsg = [...messagesRef.current].reverse().find(m => m.role === 'assistant');
-        if (lastAssistantMsg && citations) {
+        const dataObj = dataPart.data as Record<string, unknown> | undefined;
+        const citations = (dataObj?.citations || (dataPart as Record<string, unknown>)?.citations) as CitationResponse[] | undefined;
+        const partId = (dataPart as Record<string, unknown>)?.id as string | undefined;
+
+        // Match citation metadata by server message ID first, falling back to the latest assistant message
+        const targetMsg = partId 
+          ? messagesRef.current.find(m => m.id === partId)
+          : [...messagesRef.current].reverse().find(m => m.role === 'assistant');
+
+        const targetId = targetMsg?.id || partId;
+        if (targetId && citations && citations.length > 0) {
           setMessageCitations(prev => ({
             ...prev,
-            [lastAssistantMsg.id]: citations
+            [targetId]: citations
           }));
         }
       }
+    },
+    onError: (error) => {
+      console.error('Chat stream failure:', error);
+      setStreamError(error.message || 'Stream connection error occurred.');
+      setPipelineStatus(null);
+    },
+    onFinish: () => {
+      setPipelineStatus(null);
     }
   });
 
@@ -263,21 +258,21 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
       setStreamError(null);
     } else if (status === 'streaming') {
       setPipelineStatus('Generating response...');
+    } else if (status === 'ready') {
+      setPipelineStatus(null);
     }
   }, [status]);
 
   useEffect(() => {
     if (location.state?.initialPrompt && !initialPromptRun.current && messages.length === 0) {
       initialPromptRun.current = true;
-      
-      window.history.replaceState({}, document.title);
-      sendMessage({
-        text: location.state.initialPrompt,
-      });
+      const promptText = location.state.initialPrompt;
+      navigate(location.pathname, { replace: true, state: null });
+      sendMessage({ text: promptText });
       setStreamError(null);
       setPipelineStatus('Retrieving context...');
     }
-  }, [location.state, messages, sendMessage]);
+  }, [location.state, messages, sendMessage, navigate, location.pathname]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -317,8 +312,8 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
               </div>
               <div className="space-y-1.5">
                 <h2 className="text-sm font-semibold text-slate-200">Session Initialized</h2>
-                <p className="text-xs text-slate-450 leading-relaxed">
-                  Submit a query to parse and analyze filing data.
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Submit a query to parse and analyze filing data with citations.
                 </p>
               </div>
             </div>
@@ -378,8 +373,17 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-red-500/25 bg-red-950/10 text-red-400">
                 <AlertCircle className="h-4 w-4" />
               </div>
-              <div className="flex flex-col gap-1.5 rounded-2xl rounded-tl-none bg-red-950/20 border border-red-500/20 p-4 text-sm shadow-md text-red-400">
-                <span className="font-semibold text-xxs tracking-wider uppercase font-mono">Grounding Policy Blocked</span>
+              <div className="flex flex-col gap-1.5 rounded-2xl rounded-tl-none bg-red-950/20 border border-red-500/20 p-4 text-sm shadow-md text-red-400 relative">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-xxs tracking-wider uppercase font-mono">Pipeline Alert</span>
+                  <button
+                    onClick={() => setStreamError(null)}
+                    className="text-red-400/60 hover:text-red-300 p-0.5"
+                    title="Dismiss alert"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
                 <p className="text-xs leading-relaxed mt-0.5">{streamError}</p>
               </div>
             </div>
@@ -397,7 +401,7 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
                   <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '300ms' }}></span>
                 </div>
                 {pipelineStatus && (
-                  <span className="text-[10px] font-mono text-slate-500 mt-1 uppercase tracking-wider">{pipelineStatus}</span>
+                  <span className="text-[10px] font-mono text-slate-400 mt-1 uppercase tracking-wider">{pipelineStatus}</span>
                 )}
               </div>
             </div>
@@ -437,7 +441,7 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
                 <button
                   type="button"
                   onClick={() => { setUploadState('idle'); setUploadFileName(null); setUploadError(null); }}
-                  className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+                  className="shrink-0 opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -471,7 +475,7 @@ function ChatArea({ threadId, threadTitle, initialMessages, token, initialCitati
                   <button
                     type="button"
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }}
-                    disabled={uploadState === 'uploading'}
+                    disabled={uploadState === 'uploading' || isModelGenerating}
                     className="hover:text-blue-400 transition-colors p-1 disabled:opacity-40 cursor-pointer"
                     title="Upload PDF document"
                   >
@@ -511,19 +515,14 @@ interface AssistantMessageProps {
   onCitationClick: (chunkId: string) => void;
 }
 
-const CITATION_REGEX = /\[\s*\*?\*?\s*([^,\]*]+?)\s*\*?\*?\s*,\s*\*?\*?\s*[pP]age\s*\*?\*?\s*(\d+)\s*\*?\*?\s*\]/g;
+// Regex supports standard [FILENAME, Page X], [FILENAME, p. X], [FILENAME, pages X]
+const CITATION_REGEX = /\[\s*\*?\*?\s*([^,\]*]+?)\s*\*?\*?\s*,\s*\*?\*?\s*(?:[pP]ages?|[pP]\.?)\s*\*?\*?\s*(\d+)(?:-\d+)?\s*\*?\*?\s*\]/g;
 
-function buildDisplayLabel(filename: string, pageNum: number): string {
-  let company = filename.replace(/_.*$/, '');
-  if (company.toUpperCase() === 'RELIANCE') company = 'Reliance';
-  else if (company.toUpperCase() === 'TCS') company = 'TCS';
-  const yearMatch = filename.match(/\d{4}/);
-  const year = yearMatch ? `'${yearMatch[0].slice(-2)}` : '';
-  return `${company} ${year}, p. ${pageNum}`;
-}
+
+const normalizeFilename = (name: string): string =>
+  name.toLowerCase().replace(/\.pdf$/i, '').replace(/[\s_-]+/g, '');
 
 function AssistantMessage({ text, citations, onCitationClick }: AssistantMessageProps) {
-  
   const citationStore: Record<string, { chunkId: string | null; label: string }> = {};
   let citIdx = 0;
 
@@ -535,11 +534,13 @@ function AssistantMessage({ text, citations, onCitationClick }: AssistantMessage
     const label = buildDisplayLabel(cleanFilename, pageNum);
     const key = `cit-${citIdx++}`;
 
-    const found = citations?.find(
-      c => c.filename.toLowerCase() === cleanFilename.toLowerCase() && c.page_number === pageNum
-    );
-    citationStore[key] = { chunkId: found?.chunk_id ?? null, label };
+    const cleanNorm = normalizeFilename(cleanFilename);
+    const found = citations?.find(c => {
+      const cNorm = normalizeFilename(c.filename);
+      return (cNorm === cleanNorm || cNorm.includes(cleanNorm) || cleanNorm.includes(cNorm)) && c.page_number === pageNum;
+    });
 
+    citationStore[key] = { chunkId: found?.chunk_id ?? null, label };
     return `[${label}](https://citation.local/${key})`;
   });
 
@@ -547,7 +548,6 @@ function AssistantMessage({ text, citations, onCitationClick }: AssistantMessage
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        
         p: ({ children }) => (
           <p className="mb-2 last:mb-0 text-sm text-slate-200 leading-relaxed">{children}</p>
         ),
