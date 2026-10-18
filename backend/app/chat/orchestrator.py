@@ -20,7 +20,7 @@ from app.database.models.chat_message import ChatMessage
 from app.database.models.chat_thread import ChatThread
 from app.database.models.message_citation import MessageCitation
 from app.grounding.validator import GroundingValidationError, validate_citations
-from app.retrieval.retriever import retrieve_hybrid
+from app.retrieval.retriever import aretrieve_hybrid_raw
 
 logger = structlog.get_logger(__name__)
 
@@ -71,11 +71,10 @@ async def orchestrate_chat_stream(
             if thread:
                 user_id = thread.user_id
 
-        # Non-blocking hybrid retrieval
-        retrieved_chunks = await run_in_threadpool(
-            retrieve_hybrid,
-            db,
-            user_query,
+        # Non-blocking hybrid retrieval (natively async without thread-loop bridging)
+        retrieved_chunks = await aretrieve_hybrid_raw(
+            db=db,
+            query_text=user_query,
             user_id=user_id,
             limit=5,
             fetch_neighbors=True,
