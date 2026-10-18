@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.config import settings
 from app.database.models.document_chunk import DocumentChunk
 from app.database.models.source_document import SourceDocument
-from app.retrieval.retriever import retrieve_hybrid
+from app.retrieval.retriever import aretrieve_hybrid_raw, retrieve_hybrid
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ def dynamic_system_prompt(request: ModelRequest) -> str:
 
 
 @tool
-def search_filings(
+async def search_filings(
     query: str,
     runtime: ToolRuntime[DocumentAgentDeps],
     filenames: list[str] | None = None,
@@ -183,9 +183,9 @@ def search_filings(
         return "Search error: No database session available in execution context."
 
     try:
-        results = retrieve_hybrid(
-            deps.db,
-            query,
+        results = await aretrieve_hybrid_raw(
+            db=deps.db,
+            query_text=query,
             user_id=deps.user_id,
             filenames=filenames,
             limit=4,
