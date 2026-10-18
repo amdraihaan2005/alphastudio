@@ -6,6 +6,7 @@ and acronym-dense inquiries) into 2 to 4 focused, atomic sub-queries for paralle
 Exposes `MultiQueryDecomposer(RunnableSerializable)` with full LCEL support.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -38,12 +39,22 @@ class MultiQueryPlan(BaseModel):
 
 
 _groq_llm: ChatGroq | None = None
+_groq_llm_loop: Any = None
 
 
 def get_groq_llm(temperature: float = 0.0) -> ChatGroq:
-    """Singleton getter for the official GroqCloud ChatGroq client."""
-    global _groq_llm
-    if _groq_llm is None:
+    """Loop-aware singleton getter for the official GroqCloud ChatGroq client."""
+    global _groq_llm, _groq_llm_loop
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if (
+        _groq_llm is None
+        or _groq_llm_loop is not current_loop
+        or (_groq_llm_loop and _groq_llm_loop.is_closed())
+    ):
         if not settings.GROQ_API_KEY or not settings.GROQ_API_KEY.strip():
             raise ValueError("GROQ_API_KEY is not configured in settings/environment.")
         _groq_llm = ChatGroq(
@@ -51,6 +62,7 @@ def get_groq_llm(temperature: float = 0.0) -> ChatGroq:
             model=settings.GROQ_LLM_MODEL,
             temperature=temperature,
         )
+        _groq_llm_loop = current_loop
     return _groq_llm
 
 
