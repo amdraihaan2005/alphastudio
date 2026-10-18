@@ -71,18 +71,19 @@ def _sync_produce_chunks(
 
             batch.append(chunk_doc)
             if len(batch) >= batch_size:
-                loop.call_soon_threadsafe(queue.put_nowait, (batch, None))
+                if not loop.is_closed() and not stop_event.is_set():
+                    loop.call_soon_threadsafe(queue.put_nowait, (batch, None))
                 batch = []
 
-        if batch and not stop_event.is_set():
+        if batch and not stop_event.is_set() and not loop.is_closed():
             loop.call_soon_threadsafe(queue.put_nowait, (batch, None))
 
-        if not stop_event.is_set():
+        if not stop_event.is_set() and not loop.is_closed():
             # Push EOF sentinel: (None, None)
             loop.call_soon_threadsafe(queue.put_nowait, (None, None))
 
     except Exception as exc:
-        if not stop_event.is_set():
+        if not stop_event.is_set() and not loop.is_closed():
             logger.warning(
                 f"Error in sync chunk producer for '{filename}': {exc}"
             )
