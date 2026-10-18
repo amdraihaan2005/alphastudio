@@ -33,22 +33,33 @@ F = TypeVar("F", bound=Callable[..., Coroutine[Any, Any, Any]])
 
 # Lazy-loaded singleton holders
 _cohere_client: cohere.AsyncClientV2 | None = None
+_cohere_loop: asyncio.AbstractEventLoop | None = None
 _embeddings_model: "AlphaCohereEmbeddings | None" = None
 
 
 def get_cohere_client() -> cohere.AsyncClientV2:
     """
-    Lazy-loading singleton getter function.
-    Instantiates the AsyncClientV2 inside the running event loop on first call,
-    preventing 'RuntimeError: Event loop is closed' across ASGI worker forks.
+    Loop-aware lazy-loading client getter function.
+    Recreates AsyncClientV2 if the active event loop changes or has been closed,
+    preventing 'RuntimeError: Event loop is closed' across threads and ASGI requests.
     """
-    global _cohere_client
-    if _cohere_client is None:
+    global _cohere_client, _cohere_loop
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if (
+        _cohere_client is None
+        or _cohere_loop is not current_loop
+        or (_cohere_loop and _cohere_loop.is_closed())
+    ):
         if not settings.COHERE_API_KEY or not settings.COHERE_API_KEY.strip():
             raise ValueError(
                 "COHERE_API_KEY is not configured in settings/environment."
             )
         _cohere_client = cohere.AsyncClientV2(api_key=settings.COHERE_API_KEY)
+        _cohere_loop = current_loop
     return _cohere_client
 
 
