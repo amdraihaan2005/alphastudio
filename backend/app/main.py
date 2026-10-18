@@ -10,6 +10,25 @@ Orchestrates:
 
 from contextlib import asynccontextmanager
 import logging
+import sys
+
+# Silence harmless CPython Windows Proactor shutdown cleanup errors on exit/reload
+if sys.platform == "win32":
+    from functools import wraps
+    from asyncio.proactor_events import _ProactorBasePipeTransport
+
+    _orig_del = _ProactorBasePipeTransport.__del__
+
+    @wraps(_orig_del)
+    def _silent_del(self, *args, **kwargs):
+        try:
+            _orig_del(self, *args, **kwargs)
+        except RuntimeError as e:
+            if str(e) != "Event loop is closed":
+                raise
+
+    _ProactorBasePipeTransport.__del__ = _silent_del
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.documents.transformers import BaseDocumentTransformer
