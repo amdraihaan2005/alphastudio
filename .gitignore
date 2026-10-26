@@ -10,6 +10,8 @@ ENV/
 .env.local
 .env.*.local
 *.env
+!.env.example
+!.env.*.example
 
 # Cache directories
 .pytest_cache/
@@ -39,6 +41,9 @@ litrev/
 
 # AI Agent Developer Tooling
 .agent/
+
+# Documentation & Task Planning
+docs/plans/
 
 # Test Suites (Ignored per user request)
 tests/

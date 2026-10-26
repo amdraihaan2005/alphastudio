@@ -67,3 +67,33 @@ backend/app
     ├── routers/        # REST API endpoints & route definitions
     └── schemas/        # Pydantic data validation models
 ```
+
+## Getting Started
+
+### 1. Environment Configuration
+
+Copy the example environment files and update them with your API keys and credentials:
+
+```bash
+# Backend setup
+cp backend/.env.example backend/.env
+
+# Frontend setup
+cp frontend/.env.example frontend/.env
+```
+
+#### Required Credentials
+- **Supabase**: URL, Anon Key, Service Role Key, and PostgreSQL connection string
+- **Groq API**: `GROQ_API_KEY` for LLM inference
+- **Cohere API**: `COHERE_API_KEY` for dense vector embeddings
+
+### 2. Development Servers
+
+To start both backend and frontend development servers concurrently:
+
+```bash
+python dev.py
+```
+Or start each service separately:
+- **Backend:** `cd backend && uv run uvicorn app.main:app --reload --port 8000`
+- **Frontend:** `cd frontend && npm install && npm run dev`
